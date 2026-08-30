@@ -1,0 +1,17 @@
+services:
+  backend:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in a .env file next to this docker-compose.yml}
+      JWT_EXPIRES_IN: 7d
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@peguytbn.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?Set ADMIN_PASSWORD in a .env file}
+      ADMIN_NAME: ${ADMIN_NAME:-Super Admin}
+    volumes:
+      - backend_data:/app/data
+
+volumes:
+  backend_data:
