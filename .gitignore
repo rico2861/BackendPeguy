@@ -1,0 +1,15 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Env files (never commit real secrets)
+.env
+
+# Runtime data (re-created by seed script)
+data/
+
+# Machine-specific TLS trust store export (corporate proxy workaround)
+windows-root-ca.pem
+
+# OS
+.DS_Store

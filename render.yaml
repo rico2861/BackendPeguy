@@ -1,0 +1,58 @@
+# Render Blueprint: deploys this backend with a public HTTPS URL.
+# Usage: push this repo to GitHub, then on Render.com choose
+# "New +" -> "Blueprint" and point it at the repo.
+#
+# After deploy you get one URL, e.g. https://backendpeguy.onrender.com
+# Use it (plus /api) as VITE_API_URL when building the frontend — that's
+# what makes the deployed app talk to this live backend instead of
+# localhost.
+
+services:
+  - type: web
+    name: peguytbn-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: ADMIN_EMAIL
+        value: admin@peguytbn.local
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        value: Super Admin
+      # Live scores/odds (free tiers) — see .env.example for where to get these.
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false
+      - key: ODDS_API_KEY
+        sync: false
+      # MonCash (Digicel) payments.
+      - key: MONCASH_MODE
+        value: sandbox
+      - key: MONCASH_CLIENT_ID
+        sync: false
+      - key: MONCASH_CLIENT_SECRET
+        sync: false
+      # NOWPayments (crypto/card) payments.
+      - key: NOWPAYMENTS_MODE
+        value: live
+      - key: NOWPAYMENTS_API_KEY
+        sync: false
+      - key: NOWPAYMENTS_IPN_SECRET
+        sync: false
+      # Fill these in once you know your Render URL and your deployed
+      # frontend URL — used to build MonCash/NOWPayments callback URLs.
+      # Update and redeploy once the first deploy gives you the actual
+      # onrender.com URL (or your custom domain, e.g. api.dealpam.com).
+      - key: PUBLIC_API_URL
+        sync: false
+      - key: PUBLIC_APP_URL
+        sync: false
+    disk:
+      name: peguytbn-backend-data
+      mountPath: /app/data
+      sizeGB: 1
