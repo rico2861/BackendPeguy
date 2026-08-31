@@ -1,7 +1,28 @@
 // Populate the predictions store with sample data so the app looks alive
-// out of the box. Run with: npm run seed
+// out of the box, and seed one demo account per role so the three
+// permission levels can be tested without the admin bootstrap flow.
+// Run with: npm run seed
 const { readPredictions } = require('./db');
 const Prediction = require('./models/Prediction');
+const User = require('./models/User');
+
+// Demo-only credentials — meant to be changed or removed before any real
+// public launch. Each is only created if that email doesn't already exist,
+// so re-running the seed (every container boot, see Dockerfile) is safe.
+const DEMO_ACCOUNTS = [
+  { role: 'user', name: 'Demo Utilisateur', email: 'demo.user@peguytbn.local', phone: '+50900000001', password: 'DemoUser123!' },
+  { role: 'moderator', name: 'Demo Pronostiqueur', email: 'demo.moderator@peguytbn.local', phone: '+50900000002', password: 'DemoMod123!' },
+  { role: 'admin', name: 'Demo Admin', email: 'demo.admin@peguytbn.local', phone: '+50900000003', password: 'DemoAdmin123!' },
+];
+
+async function seedDemoAccounts() {
+  for (const acc of DEMO_ACCOUNTS) {
+    const existing = await User.findByEmail(acc.email);
+    if (existing) continue;
+    await User.create(acc);
+    console.log(`[seed] Compte démo créé (${acc.role}) : ${acc.email} / ${acc.password}`);
+  }
+}
 
 function isoDate(offsetDays) {
   const d = new Date();
@@ -30,6 +51,8 @@ const MATCHES_TOMORROW_TICKETS = [
 ];
 
 async function run() {
+  await seedDemoAccounts();
+
   const existing = await readPredictions();
   if (existing.length > 0) {
     console.log(`[seed] ${existing.length} pronostics déjà présents — seed ignoré.`);
