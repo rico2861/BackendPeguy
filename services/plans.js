@@ -3,12 +3,12 @@
 // (it's the free self-service activation).
 //
 // There's one paid plan, priced per-channel by the operator (not a pure
-// currency conversion): 1000 HTG via MonCash, $20 via crypto/card
+// currency conversion): 1100 HTG via MonCash, $20 via crypto/card
 // (NOWPayments). Both grant the same 30-day access.
-const HTG_PER_USD = 133; // used for display/conversion elsewhere in the app, not for this plan's fixed HTG price
+const HTG_PER_USD = 105; // used for display/conversion elsewhere in the app, not for this plan's fixed HTG price
 
 const PLANS = {
-  vip: { usd: 20, htg: 1000, days: 30 },
+  vip: { usd: 20, htg: 1100, days: 30 },
 };
 
 function priceForPlan(type) {

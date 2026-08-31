@@ -45,6 +45,21 @@ async function findByEmail(email) {
   return users.find((u) => u.email === normalized) || null;
 }
 
+// Login accepts email, username, or phone — whichever the user typed.
+// Checked in that order since email is still the most common case.
+async function findByIdentifier(identifier) {
+  const raw = String(identifier || '').trim();
+  if (!raw) return null;
+  const normalized = raw.toLowerCase();
+  const users = await readUsers();
+  return (
+    users.find((u) => u.email === normalized) ||
+    users.find((u) => u.username && u.username.toLowerCase() === normalized) ||
+    users.find((u) => u.phone && u.phone.replace(/\s+/g, '') === raw.replace(/\s+/g, '')) ||
+    null
+  );
+}
+
 async function create({ name, email, phone, password, role = 'user' }) {
   const users = await readUsers();
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -220,12 +235,22 @@ async function setResetOtp(id) {
   return otp;
 }
 
-async function updateProfile(id, { name, phone } = {}) {
+async function updateProfile(id, { name, phone, username } = {}) {
   const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   if (name !== undefined && name.trim()) users[idx].name = name.trim();
   if (phone !== undefined && phone.trim()) users[idx].phone = phone.trim();
+  if (username !== undefined && username.trim()) {
+    const normalized = username.trim().toLowerCase();
+    const taken = users.some((u) => u.id !== id && u.username && u.username.toLowerCase() === normalized);
+    if (taken) {
+      const err = new Error('Ce nom d’utilisateur est déjà pris.');
+      err.status = 409;
+      throw err;
+    }
+    users[idx].username = username.trim();
+  }
   await writeUsers(users);
   return toPublic(users[idx]);
 }
@@ -292,6 +317,7 @@ module.exports = {
   findAll,
   findById,
   findByEmail,
+  findByIdentifier,
   create,
   verifyPassword,
   updateRole,

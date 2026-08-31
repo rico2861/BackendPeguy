@@ -65,13 +65,16 @@ router.post('/register', async (req, res) => {
 });
 
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email et mot de passe sont requis.' });
+  // Accepts email, username, or phone — the frontend sends it as
+  // `identifier`; `email` is still accepted for backward compatibility.
+  const identifier = req.body.identifier || req.body.email;
+  const { password } = req.body;
+  if (!identifier || !password) {
+    return res.status(400).json({ error: 'Identifiant et mot de passe sont requis.' });
   }
-  const user = await User.findByEmail(email);
+  const user = await User.findByIdentifier(identifier);
   if (!user || !User.verifyPassword(user, password)) {
-    return res.status(401).json({ error: 'Email ou mot de passe incorrect.' });
+    return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect.' });
   }
   const { token, refreshToken } = await issueTokenPair(user);
   res.json({ token, refreshToken, user: User.toPublic(user) });
@@ -111,15 +114,22 @@ router.get('/me', authenticate, (req, res) => {
 // Name/phone only — email is never editable here (it's the login
 // identifier and ties together payments/audit history).
 router.put('/me', authenticate, async (req, res) => {
-  const { name, phone } = req.body || {};
+  const { name, phone, username } = req.body || {};
   if (name !== undefined && (!name.trim() || name.length > 200)) {
     return res.status(400).json({ error: 'Nom invalide.' });
   }
   if (phone !== undefined && (!phone.trim() || phone.length > 50)) {
     return res.status(400).json({ error: 'Téléphone invalide.' });
   }
-  const updated = await User.updateProfile(req.user.id, { name, phone });
-  res.json({ user: updated });
+  if (username !== undefined && (!username.trim() || username.length > 50 || !/^[a-zA-Z0-9_.]+$/.test(username.trim()))) {
+    return res.status(400).json({ error: 'Nom d’utilisateur invalide (lettres, chiffres, point ou underscore uniquement).' });
+  }
+  try {
+    const updated = await User.updateProfile(req.user.id, { name, phone, username });
+    res.json({ user: updated });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
+  }
 });
 
 // Logged-in OTP reset flow for the Paramètres page — distinct from
