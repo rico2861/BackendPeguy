@@ -7,9 +7,13 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-async function listPredictions({ date, league, country, market, q, ticketType } = {}) {
+async function listPredictions({ date, dateFrom, league, country, market, q, ticketType } = {}) {
   let preds = await readPredictions();
   if (date) preds = preds.filter((p) => p.match_date === date);
+  // dateFrom (ignored when an exact date is given) is "today or later" —
+  // used by the VIP page so a pick published ahead of its match date is
+  // never hidden just because it isn't scheduled for exactly today.
+  else if (dateFrom) preds = preds.filter((p) => p.match_date >= dateFrom);
   if (league) preds = preds.filter((p) => p.league === league);
   if (country) preds = preds.filter((p) => p.country === country);
   if (market) preds = preds.filter((p) => p.market === market);
@@ -193,8 +197,8 @@ function isVisible(pred, viewer) {
   return viewer.isVip || viewer.role === 'moderator' || viewer.role === 'admin';
 }
 
-async function dailyTickets(date, viewer) {
-  const preds = (await listPredictions({ date })).filter((p) => p.ticket_group);
+async function dailyTickets(date, viewer, dateFrom) {
+  const preds = (await listPredictions({ date, dateFrom })).filter((p) => p.ticket_group);
   const groups = new Map();
   for (const p of preds) {
     if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, legs: [] });

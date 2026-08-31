@@ -22,8 +22,8 @@ async function trySync() {
 
 router.get('/predictions', authenticateOptional, async (req, res) => {
   await trySync();
-  const { date, league, country, market, q } = req.query;
-  const predictions = (await Prediction.listPredictions({ date, league, country, market, q })).filter((p) =>
+  const { date, dateFrom, league, country, market, q } = req.query;
+  const predictions = (await Prediction.listPredictions({ date, dateFrom, league, country, market, q })).filter((p) =>
     Prediction.isVisible(p, req.user)
   );
   res.json({ predictions, count: predictions.length });
@@ -73,8 +73,9 @@ router.get('/leagues', async (req, res) => {
 
 router.get('/daily-bets', authenticateOptional, async (req, res) => {
   await trySync();
-  const date = req.query.date || new Date().toISOString().slice(0, 10);
-  res.json({ date, tickets: await Prediction.dailyTickets(date, req.user) });
+  const { date, dateFrom } = req.query;
+  const effectiveDate = date || (dateFrom ? undefined : new Date().toISOString().slice(0, 10));
+  res.json({ date: effectiveDate || dateFrom, tickets: await Prediction.dailyTickets(effectiveDate, req.user, dateFrom) });
 });
 
 // --- Write endpoints: moderator ("pronostiqueur") and admin only. ---
