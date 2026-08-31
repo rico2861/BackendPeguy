@@ -28,6 +28,35 @@ router.get('/predictions', authenticateOptional, async (req, res) => {
   res.json({ predictions, count: predictions.length });
 });
 
+// Global track record over the last N days — powers the performance chart
+// on the frontend. Must be declared before /predictions/:id so "stats"
+// doesn't get captured as an :id param.
+router.get('/predictions/stats', async (req, res) => {
+  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 90);
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffIso = cutoff.toISOString().slice(0, 10);
+
+  const settled = (await Prediction.listPredictions({})).filter(
+    (p) => p.result && p.match_date >= cutoffIso
+  );
+
+  const byDate = new Map();
+  for (const p of settled) {
+    if (!byDate.has(p.match_date)) byDate.set(p.match_date, { date: p.match_date, won: 0, lost: 0 });
+    byDate.get(p.match_date)[p.result === 'won' ? 'won' : 'lost'] += 1;
+  }
+  const daily = Array.from(byDate.values())
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((d) => ({ ...d, total: d.won + d.lost, winRate: Math.round((d.won / (d.won + d.lost)) * 100) }));
+
+  const won = settled.filter((p) => p.result === 'won').length;
+  const lost = settled.length - won;
+  const overall = { won, lost, total: settled.length, winRate: settled.length ? Math.round((won / settled.length) * 100) : 0 };
+
+  res.json({ daily, overall });
+});
+
 router.get('/predictions/:id', authenticateOptional, async (req, res) => {
   await trySync();
   const pred = await Prediction.getPrediction(req.params.id);
