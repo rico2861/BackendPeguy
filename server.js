@@ -68,7 +68,10 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '200kb' }));
+// Captures raw request bytes alongside the parsed body — needed to verify
+// the Bazik webhook's HMAC signature, which is computed over the exact
+// raw payload, not a re-serialization of the parsed JSON.
+app.use(express.json({ limit: '200kb', verify: (req, res, buf) => { req.rawBody = buf.toString('utf8'); } }));
 app.use(morgan('dev'));
 
 // Brute-force guard on the handful of routes where it actually matters:

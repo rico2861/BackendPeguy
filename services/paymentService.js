@@ -58,6 +58,12 @@ async function reconcile(payment, source = 'manual-check') {
         raw,
       });
     }
+  } else if (payment.provider === 'bazik') {
+    // Bazik's public API doesn't document a status-lookup endpoint (only
+    // creation + webhooks), so unlike MonCash/NOWPayments there is nothing
+    // to actively poll here — settlement can only arrive via the signed
+    // webhook (see routes/payments.js POST /bazik/notify).
+    return payment;
   } else {
     return payment;
   }

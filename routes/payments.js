@@ -1,6 +1,7 @@
 const express = require('express');
 const moncash = require('../services/moncash');
 const nowpayments = require('../services/nowpayments');
+const bazik = require('../services/bazik');
 const { priceForPlan, PLANS } = require('../services/plans');
 const { reconcile } = require('../services/paymentService');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
@@ -37,6 +38,35 @@ router.post('/moncash/create', authenticate, async (req, res) => {
     res.json({ redirectUrl, paymentId: payment.id });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Erreur MonCash.' });
+  }
+});
+
+router.post('/bazik/create', authenticate, async (req, res) => {
+  try {
+    const { planType } = req.body;
+    const price = priceForPlan(planType);
+    if (!price) return res.status(400).json({ error: 'Plan invalide.' });
+    if (!bazik.isConfigured()) {
+      return res.status(503).json({
+        error: 'Bazik pas encore configuré (BAZIK_USER_ID / BAZIK_SECRET_KEY manquants dans backend/.env).',
+      });
+    }
+
+    const payment = await Payment.create({ userId: req.user.id, planType, amountUsd: price.usd, amountHtg: price.htg, provider: 'bazik' });
+    const [customerFirstName, ...rest] = String(req.user.name || '').trim().split(/\s+/);
+    const customerLastName = rest.join(' ') || undefined;
+    const { redirectUrl, providerOrderId } = await bazik.createPayment({
+      referenceId: payment.id,
+      amountGdes: price.htg,
+      description: `PeguyTbn VIP — ${planType}`,
+      customerFirstName: customerFirstName || undefined,
+      customerLastName,
+      customerEmail: req.user.email,
+    });
+    await Payment.update(payment.id, { providerOrderId }, { source: 'system', message: 'Lien de paiement Bazik généré', raw: { redirectUrl, providerOrderId } });
+    res.json({ redirectUrl, paymentId: payment.id });
+  } catch (err) {
+    res.status(502).json({ error: err.message || 'Erreur Bazik.' });
   }
 });
 
@@ -100,6 +130,71 @@ router.post('/moncash/notify', async (req, res) => {
     }
   } catch (err) {
     console.error('[moncash notify] error', err.message);
+  }
+  res.status(200).json({ ok: true });
+});
+
+// Bazik's webhook — signature-verified (HMAC-SHA256 over
+// timestamp.eventId.rawBody, see services/bazik.js) before anything in the
+// body is trusted. Payment lookup is by referenceId, which we set to our
+// own Payment.id when creating the payment (see POST /bazik/create).
+router.post('/bazik/notify', async (req, res) => {
+  try {
+    const signature = req.headers['x-bazik-signature'];
+    const timestamp = req.headers['x-bazik-timestamp'];
+    const eventId = req.headers['x-bazik-event-id'];
+    if (!bazik.verifyWebhookSignature({ timestamp, eventId, rawBody: req.rawBody, signature })) {
+      console.warn('[bazik notify] invalid or unconfigured signature — ignored');
+      return res.status(200).json({ ok: true }); // ack anyway, don't let it retry forever
+    }
+
+    // Flat payload (per docs), e.g.:
+    // { type: "payment.succeeded", orderId, transactionId, status: "successful",
+    //   amount, currency, referenceId, timestamp }
+    // We only handle payment.* events here — transfer.* events (payouts,
+    // not something this app initiates) are acknowledged and ignored.
+    const body = req.body || {};
+    const { type, referenceId, transactionId, status: bazikStatus } = body;
+    if (!String(type || '').startsWith('payment.')) {
+      return res.status(200).json({ ok: true });
+    }
+
+    const payment = referenceId ? await Payment.findById(referenceId) : null;
+    if (payment && payment.status === 'pending') {
+      await Payment.update(payment.id, {}, { source: 'webhook', message: `Callback Bazik reçu (${bazikStatus || type})`, raw: body });
+      const status = bazikStatus === 'successful' ? 'success' : bazikStatus === 'pending' ? 'pending' : 'failed';
+      if (status !== 'pending') {
+        // Re-read right before mutating: closes the race window where two
+        // webhook retries arrive close together (see the NOWPayments
+        // handler below for why this matters).
+        const fresh = await Payment.findById(payment.id);
+        if (fresh && fresh.status === 'pending') {
+          await Payment.update(
+            payment.id,
+            { status, transactionId: transactionId || null },
+            { source: 'webhook', message: `Paiement réglé via webhook Bazik signé : ${status}`, raw: body }
+          );
+          if (status === 'success') {
+            await User.setPlan(payment.userId, {
+              type: payment.planType,
+              amountUsd: payment.amountUsd,
+              amountHtg: payment.amountHtg,
+              provider: payment.provider,
+            });
+            const user = await User.findById(payment.userId);
+            if (user) {
+              mailer
+                .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+                .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
+            }
+          }
+        }
+      }
+    } else if (!payment) {
+      console.log('[bazik notify] unmatched referenceId', referenceId);
+    }
+  } catch (err) {
+    console.error('[bazik notify] error', err.message);
   }
   res.status(200).json({ ok: true });
 });

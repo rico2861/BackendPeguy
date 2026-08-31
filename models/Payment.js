@@ -30,10 +30,11 @@ async function create({ userId, planType, amountUsd, amountHtg, provider }) {
     reference: null, // MonCash reference
     invoiceId: null, // NOWPayments invoice id (set at creation)
     providerPaymentId: null, // NOWPayments payment id (only exists once customer sends funds)
+    providerOrderId: null, // Bazik's own orderId (distinct from this payment's id, which we send as referenceId)
     payCurrency: null, // e.g. 'btc', 'usdttrc20' — which crypto the customer actually chose
     payAmount: null, // expected amount in that crypto
     actuallyPaid: null, // amount NOWPayments actually received
-    provider, // 'moncash' | 'nowpayments'
+    provider, // 'moncash' | 'nowpayments' | 'bazik'
     history: [],
     createdAt: nowIso(),
     updatedAt: nowIso(),
