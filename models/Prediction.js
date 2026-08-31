@@ -193,11 +193,18 @@ async function dailyTickets(date, viewer) {
   for (const [groupId, g] of groups) {
     const totalOdd = g.legs.reduce((acc, leg) => acc * leg.odd, 1);
     const locked = g.legs.some((leg) => !canReveal(leg, viewer));
+    // A combo only ever wins if every leg does — one loss sinks the whole
+    // ticket, same as a real accumulator bet. Still pending if nothing has
+    // lost yet but at least one leg hasn't been graded.
+    let result = null;
+    if (g.legs.some((leg) => leg.result === 'lost')) result = 'lost';
+    else if (g.legs.every((leg) => leg.result === 'won')) result = 'won';
     tickets.push({
       id: groupId,
       type: g.type,
       date,
       locked,
+      result,
       legs: g.legs.map((leg) => maskForViewer(leg, viewer)),
       total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
     });
