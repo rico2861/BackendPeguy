@@ -23,8 +23,8 @@ async function trySync() {
 router.get('/predictions', authenticateOptional, async (req, res) => {
   await trySync();
   const { date, league, country, market, q } = req.query;
-  const predictions = (await Prediction.listPredictions({ date, league, country, market, q })).map((p) =>
-    Prediction.maskForViewer(p, req.user)
+  const predictions = (await Prediction.listPredictions({ date, league, country, market, q })).filter((p) =>
+    Prediction.isVisible(p, req.user)
   );
   res.json({ predictions, count: predictions.length });
 });
@@ -61,8 +61,10 @@ router.get('/predictions/stats', async (req, res) => {
 router.get('/predictions/:id', authenticateOptional, async (req, res) => {
   await trySync();
   const pred = await Prediction.getPrediction(req.params.id);
-  if (!pred) return res.status(404).json({ error: 'Pronostic introuvable.' });
-  res.json({ prediction: Prediction.maskForViewer(pred, req.user) });
+  if (!pred || !Prediction.isVisible(pred, req.user)) {
+    return res.status(404).json({ error: 'Pronostic introuvable.' });
+  }
+  res.json({ prediction: pred });
 });
 
 router.get('/leagues', async (req, res) => {

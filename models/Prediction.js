@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { readPredictions, writePredictions } = require('../db');
 const { evaluatePick } = require('../services/settlement');
+const COMPETITIONS = require('../services/competitions');
 
 function nowIso() {
   return new Date().toISOString();
@@ -34,12 +35,20 @@ async function getPrediction(id) {
   return preds.find((p) => p.id === id) || null;
 }
 
+// Union of every league that actually has a prediction, plus the fixed
+// set of competitions the live-scores feed covers (services/
+// competitions.js) — so the filter dropdown isn't empty for a league on
+// a day nobody's published a pick for yet.
 async function listLeagues() {
   const preds = await readPredictions();
   const seen = new Map();
   for (const p of preds) {
     const key = `${p.country}-${p.league}`;
     if (!seen.has(key)) seen.set(key, { country: p.country, league: p.league, flag: p.flag });
+  }
+  for (const c of COMPETITIONS) {
+    const key = `${c.country}-${c.league}`;
+    if (!seen.has(key)) seen.set(key, { country: c.country, league: c.league, flag: null });
   }
   return Array.from(seen.values()).sort((a, b) => a.league.localeCompare(b.league));
 }
@@ -96,9 +105,13 @@ async function updatePrediction(id, data) {
   const idx = preds.findIndex((p) => p.id === id);
   if (idx === -1) return null;
   const existing = preds[idx];
-  // Any manual edit to the pick, market or score re-opens the bet for
-  // (re-)grading instead of keeping a stale result around.
-  const touchesGrading = ['pick', 'market', 'score_home', 'score_away', 'status'].some((f) => f in data);
+  // A moderator forcing a result explicitly (data.result present) always
+  // wins — marked 'manual' and left alone by trySettle() below (which
+  // never overwrites an existing result). Otherwise, editing pick/market/
+  // score/status re-opens the bet for auto (re-)grading instead of
+  // keeping a stale result around.
+  const forcingResult = 'result' in data;
+  const touchesGrading = !forcingResult && ['pick', 'market', 'score_home', 'score_away', 'status'].some((f) => f in data);
   const merged = {
     ...existing,
     ...data,
@@ -107,9 +120,9 @@ async function updatePrediction(id, data) {
         ? existing.probability
         : Number(data.probability),
     odd: data.odd !== undefined ? Number(data.odd) : existing.odd,
-    result: touchesGrading ? null : existing.result,
-    settled_at: touchesGrading ? null : existing.settled_at,
-    settled_by: touchesGrading ? null : existing.settled_by,
+    result: forcingResult ? data.result : touchesGrading ? null : existing.result,
+    settled_at: forcingResult ? (data.result ? nowIso() : null) : touchesGrading ? null : existing.settled_at,
+    settled_by: forcingResult ? (data.result ? 'manual' : null) : touchesGrading ? null : existing.settled_by,
     updated_at: nowIso(),
   };
   const settled = trySettle(merged);
@@ -167,19 +180,17 @@ async function deletePrediction(id) {
   return changed;
 }
 
-// A prediction/leg marked is_vip has its pick, odd and probability hidden
-// from anyone who isn't VIP (or staff) — the caller still learns a bet
-// exists, just not which one, mirroring BetMines' "unlock to reveal" cards.
-function canReveal(pred, viewer) {
+// A prediction/leg marked is_vip is visible to everyone once it's
+// SETTLED (result known — a finished pick is proof of track record, no
+// edge left in hiding it) or to VIP/staff viewers at any time. Anyone
+// else never sees it at all — not even a locked teaser card — while
+// it's still pending. Binary: an item either appears in full, or is
+// excluded entirely from every list this model returns.
+function isVisible(pred, viewer) {
   if (!pred.is_vip) return true;
+  if (pred.result) return true;
   if (!viewer) return false;
   return viewer.isVip || viewer.role === 'moderator' || viewer.role === 'admin';
-}
-
-function maskForViewer(pred, viewer) {
-  if (canReveal(pred, viewer)) return { ...pred, locked: false };
-  const { pick, odd, probability, ...rest } = pred;
-  return { ...rest, pick: null, odd: null, probability: null, locked: true };
 }
 
 async function dailyTickets(date, viewer) {
@@ -191,8 +202,12 @@ async function dailyTickets(date, viewer) {
   }
   const tickets = [];
   for (const [groupId, g] of groups) {
+    // A ticket is all-or-nothing for a given viewer: if any leg is
+    // still a hidden pending VIP pick, the whole combo (and its
+    // total_odd) would be misleading if partially shown, so the entire
+    // ticket is excluded rather than shown with gaps.
+    if (!g.legs.every((leg) => isVisible(leg, viewer))) continue;
     const totalOdd = g.legs.reduce((acc, leg) => acc * leg.odd, 1);
-    const locked = g.legs.some((leg) => !canReveal(leg, viewer));
     // A combo only ever wins if every leg does — one loss sinks the whole
     // ticket, same as a real accumulator bet. Still pending if nothing has
     // lost yet but at least one leg hasn't been graded.
@@ -203,10 +218,9 @@ async function dailyTickets(date, viewer) {
       id: groupId,
       type: g.type,
       date,
-      locked,
       result,
-      legs: g.legs.map((leg) => maskForViewer(leg, viewer)),
-      total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
+      legs: g.legs,
+      total_odd: Math.round(totalOdd * 100) / 100,
     });
   }
   return tickets;
@@ -220,8 +234,7 @@ module.exports = {
   updatePrediction,
   deletePrediction,
   dailyTickets,
-  canReveal,
-  maskForViewer,
+  isVisible,
   trySettle,
   settleAll,
   applyLiveFacts,
