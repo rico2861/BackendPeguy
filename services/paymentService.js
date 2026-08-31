@@ -68,7 +68,12 @@ async function reconcile(payment, source = 'manual-check') {
     raw,
   });
   if (status === 'success') {
-    await User.setPlan(payment.userId, { type: payment.planType });
+    await User.setPlan(payment.userId, {
+      type: payment.planType,
+      amountUsd: payment.amountUsd,
+      amountHtg: payment.amountHtg,
+      provider: payment.provider,
+    });
     const user = await User.findById(payment.userId);
     if (user) {
       mailer

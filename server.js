@@ -31,6 +31,7 @@ const uploadRoutes = require('./routes/uploads');
 const pushRoutes = require('./routes/push');
 const { syncPredictionsWithLiveResults } = require('./services/predictionSync');
 const { sweepPendingPayments } = require('./services/paymentSync');
+const { checkAndSendReminders } = require('./services/subscriptionReminders');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -96,3 +97,10 @@ setInterval(() => {
   sweepPendingPayments().catch(() => {});
 }, 120_000);
 sweepPendingPayments().catch(() => {});
+
+// VIP expiry reminders (7/3/1/0 days out) — hourly is frequent enough for
+// a daily-granularity reminder and cheap even at this app's scale.
+setInterval(() => {
+  checkAndSendReminders().catch((err) => console.error('[reminders] failed:', err.message));
+}, 3_600_000);
+checkAndSendReminders().catch((err) => console.error('[reminders] failed:', err.message));

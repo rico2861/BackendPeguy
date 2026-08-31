@@ -197,4 +197,35 @@ function sendPaymentConfirmationEmail(user, payment) {
   });
 }
 
-module.exports = { isConfigured, sendMail, sendWelcomeEmail, sendPasswordResetEmail, sendPaymentConfirmationEmail };
+function sendVipExpiringEmail(user, daysRemaining) {
+  const name = escapeHtml(user.name);
+  const isToday = daysRemaining <= 0;
+  const heading = isToday ? 'Ton accès Premium expire aujourd\'hui' : `Ton accès Premium expire dans ${daysRemaining} jour${daysRemaining > 1 ? 's' : ''}`;
+  return sendMail({
+    to: user.email,
+    subject: heading,
+    html: renderEmail({
+      preheader: heading,
+      category: 'payment',
+      kicker: 'ABONNEMENT',
+      heading,
+      bodyHtml: `<p style="margin:0 0 12px;">Bonjour ${name},</p>
+        <p style="margin:0 0 12px;">${
+          isToday
+            ? "Ton accès Premium se termine aujourd'hui. Renouvelle maintenant pour ne pas perdre les cotes en direct, les value bets et les pronostics VIP."
+            : `Pense à renouveler pour continuer à profiter des cotes en direct, des value bets et des pronostics VIP sans interruption.`
+        }</p>`,
+      ctaText: 'Renouveler mon accès Premium',
+      ctaUrl: `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/premium`,
+    }),
+  });
+}
+
+module.exports = {
+  isConfigured,
+  sendMail,
+  sendWelcomeEmail,
+  sendPasswordResetEmail,
+  sendPaymentConfirmationEmail,
+  sendVipExpiringEmail,
+};

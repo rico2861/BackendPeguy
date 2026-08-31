@@ -127,18 +127,30 @@ router.post('/nowpayments/notify', async (req, res) => {
       }
       const status = nowpayments.statusFromNowPayments(paymentStatus);
       if (status !== 'pending') {
-        await Payment.update(
-          payment.id,
-          { status, actuallyPaid: actuallyPaid || null },
-          { source: 'webhook', message: `Paiement réglé via webhook signé : ${status}`, raw: req.body }
-        );
-        if (status === 'success') {
-          await User.setPlan(payment.userId, { type: payment.planType });
-          const user = await User.findById(payment.userId);
-          if (user) {
-            mailer
-              .sendPaymentConfirmationEmail(User.toPublic(user), payment)
-              .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
+        // Re-read right before mutating: closes the race window where two
+        // IPN retries arrive close together and both pass the `pending`
+        // check made at the top of this handler — only the one that sees
+        // 'pending' *here* is allowed to grant the plan.
+        const fresh = await Payment.findById(payment.id);
+        if (fresh && fresh.status === 'pending') {
+          await Payment.update(
+            payment.id,
+            { status, actuallyPaid: actuallyPaid || null },
+            { source: 'webhook', message: `Paiement réglé via webhook signé : ${status}`, raw: req.body }
+          );
+          if (status === 'success') {
+            await User.setPlan(payment.userId, {
+              type: payment.planType,
+              amountUsd: payment.amountUsd,
+              amountHtg: payment.amountHtg,
+              provider: payment.provider,
+            });
+            const user = await User.findById(payment.userId);
+            if (user) {
+              mailer
+                .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+                .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
+            }
           }
         }
       }

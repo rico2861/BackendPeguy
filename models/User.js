@@ -62,7 +62,8 @@ async function create({ name, email, phone, password, role = 'user' }) {
     phone: phone ? String(phone).trim() : null,
     passwordHash: bcrypt.hashSync(password, 10),
     role,
-    plan: null, // { type: 'trial'|'vip', startedAt, expiresAt } | null
+    plan: null, // { type: 'trial'|'vip', startedAt, expiresAt, amountUsd, amountHtg, provider, remindersSent } | null
+    planHistory: [], // every plan ever activated, oldest first
     favorites: [],
     refreshTokenHash: null,
     resetTokenHash: null,
@@ -96,20 +97,42 @@ async function updateRole(id, role) {
 
 // Sets (or extends from now) a VIP plan by type. `days` overrides the
 // default duration for that type — used by the admin panel's custom
-// extension. Passing no plan / clearPlan revokes access immediately.
-async function setPlan(id, { type = 'trial', days } = {}) {
+// extension. `amountUsd`/`amountHtg`/`provider` are only present for a real
+// paid activation (absent for the free trial or an admin grant) and are
+// carried into planHistory as the permanent record of what was paid.
+// Passing no plan / clearPlan revokes access immediately.
+async function setPlan(id, { type = 'trial', days, amountUsd, amountHtg, provider } = {}) {
   const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   const duration = Number.isFinite(days) ? days : PLAN_DURATIONS_DAYS[type] || 30;
   const now = new Date();
-  users[idx].plan = {
+  const plan = {
     type,
     startedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + duration * 86_400_000).toISOString(),
+    amountUsd: amountUsd ?? null,
+    amountHtg: amountHtg ?? null,
+    provider: provider ?? null,
+    remindersSent: [],
   };
+  users[idx].plan = plan;
+  users[idx].planHistory = [...(users[idx].planHistory || []), plan];
   await writeUsers(users);
   return toPublic(users[idx]);
+}
+
+// Marks a reminder threshold (7/3/1/0 days before expiry) as sent for the
+// user's CURRENT plan, so subscriptionReminders.js never sends the same
+// one twice. No-op if the plan has since changed (stale threshold).
+async function markReminderSent(id, planStartedAt, threshold) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1 || users[idx].plan?.startedAt !== planStartedAt) return;
+  const sent = new Set(users[idx].plan.remindersSent || []);
+  sent.add(threshold);
+  users[idx].plan.remindersSent = Array.from(sent);
+  await writeUsers(users);
 }
 
 async function clearPlan(id) {
@@ -248,6 +271,7 @@ module.exports = {
   verifyPassword,
   updateRole,
   setPlan,
+  markReminderSent,
   clearPlan,
   remove,
   toggleFavorite,

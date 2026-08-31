@@ -76,4 +76,12 @@ async function listAll() {
   return [...(await readPayments())].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-module.exports = { create, findById, findLatestForUser, update, listAll };
+// Full payment history for one user (most recent first) — powers the
+// "Mon abonnement" page's payment history section.
+async function listForUser(userId) {
+  return (await readPayments())
+    .filter((p) => p.userId === userId)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+module.exports = { create, findById, findLatestForUser, update, listAll, listForUser };

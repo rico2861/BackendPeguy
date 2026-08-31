@@ -1,6 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Payment = require('../models/Payment');
 const mailer = require('../services/mailer');
 const { authenticate } = require('../middleware/auth');
 
@@ -116,6 +117,32 @@ router.post('/vip/activate-trial', authenticate, async (req, res) => {
 router.post('/vip/cancel', authenticate, async (req, res) => {
   const updated = await User.clearPlan(req.user.id);
   res.json({ user: updated });
+});
+
+// "Mon abonnement" — current status, plan + payment history, all derived
+// live (no separate status flag to go stale). Status precedence: an
+// active plan wins even if an old payment happens to still say pending
+// (e.g. a since-superseded renewal attempt).
+router.get('/subscription', authenticate, async (req, res) => {
+  const user = req.user;
+  const plan = user.plan || null;
+  const now = Date.now();
+
+  let status = 'none';
+  if (plan && new Date(plan.expiresAt).getTime() > now) status = 'active';
+  else if (plan) status = 'expired';
+
+  const payments = await Payment.listForUser(user.id);
+  if (status === 'none' && payments.some((p) => p.status === 'pending')) status = 'pending';
+
+  const daysRemaining = status === 'active' ? Math.ceil((new Date(plan.expiresAt).getTime() - now) / 86_400_000) : 0;
+
+  res.json({
+    status,
+    plan: plan ? { ...plan, daysRemaining } : null,
+    planHistory: user.planHistory || [],
+    payments,
+  });
 });
 
 // Always responds the same generic message whether or not the email
