@@ -20,6 +20,8 @@ if (fs.existsSync(winCaBundle)) {
 
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
 const User = require('./models/User');
 const authRoutes = require('./routes/auth');
@@ -42,9 +44,53 @@ if (!process.env.JWT_SECRET) {
   console.warn('[WARN] JWT_SECRET is not set — copy .env.example to .env and set a real secret.');
 }
 
-app.use(cors());
-app.use(express.json());
+// Render (and most PaaS hosts) sit behind a reverse proxy — without this,
+// every request looks like it comes from the proxy's own IP, which would
+// make the rate limiters below key off one shared bucket for everyone
+// instead of the real client.
+app.set('trust proxy', 1);
+
+app.use(helmet());
+
+// Only the web app's own origin(s) may call this API from a browser.
+// Requests with no Origin header (the Capacitor/Android app, curl,
+// server-to-server webhooks) are unaffected — CORS is a browser-enforced
+// mechanism, not a server-side allowlist of callers.
+const allowedOrigins = [process.env.PUBLIC_APP_URL, ...(process.env.EXTRA_CORS_ORIGINS || '').split(',')]
+  .map((o) => o?.trim())
+  .filter(Boolean);
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.length === 0 || allowedOrigins.includes(origin)) return callback(null, true);
+      callback(new Error('Origine non autorisée par CORS.'));
+    },
+  })
+);
+
+app.use(express.json({ limit: '200kb' }));
 app.use(morgan('dev'));
+
+// Brute-force guard on the handful of routes where it actually matters:
+// password login and the PIN-gated admin bootstrap (routes/auth.js).
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Trop de tentatives — réessayez dans quelques minutes.' },
+});
+// Generous global backstop so the API can't be hammered wholesale, without
+// getting in the way of normal browsing (predictions/live poll every
+// 30-45s per open tab).
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api', globalLimiter);
+app.use(['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/admin/bootstrap'], authLimiter);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'peguytbn-backend' }));
 app.use('/api/auth', authRoutes);
@@ -60,6 +106,9 @@ app.use('/api/combos', comboRoutes);
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  if (err.message === 'Origine non autorisée par CORS.') {
+    return res.status(403).json({ error: err.message });
+  }
   console.error(err);
   res.status(500).json({ error: 'Erreur interne du serveur.' });
 });

@@ -93,3 +93,7 @@ services:
         sync: false
       - key: PUBLIC_APP_URL
         sync: false
+      # CORS: PUBLIC_APP_URL above is always allowed; add extra
+      # comma-separated browser origins here if needed (custom domain...).
+      - key: EXTRA_CORS_ORIGINS
+        sync: false

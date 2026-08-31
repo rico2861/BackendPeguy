@@ -8,6 +8,18 @@ const { recordAudit } = require('../middleware/audit');
 
 const router = express.Router();
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Shared by /register and /admin/bootstrap — same required fields, same
+// shape of account being created.
+function validateContact({ name, email, phone, password }) {
+  if (!name || !email || !phone || !password) return 'Nom, email, téléphone et mot de passe sont requis.';
+  if (name.length > 200 || email.length > 200 || phone.length > 50) return 'Un des champs dépasse la longueur autorisée.';
+  if (!EMAIL_RE.test(email)) return 'Adresse email invalide.';
+  if (password.length < 6) return 'Le mot de passe doit contenir au moins 6 caractères.';
+  return null;
+}
+
 function signAccessToken(user) {
   return jwt.sign(
     { sub: user.id, role: user.role, email: user.email },
@@ -37,12 +49,8 @@ async function issueTokenPair(user) {
 router.post('/register', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
-    if (!name || !email || !phone || !password) {
-      return res.status(400).json({ error: 'Nom, email, téléphone et mot de passe sont requis.' });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
-    }
+    const validationError = validateContact({ name, email, phone, password });
+    if (validationError) return res.status(400).json({ error: validationError });
     // Public self-registration is always a plain 'user' — role upgrades
     // to moderator/admin can only be granted by an admin afterwards. The
     // phone number is required so admins/tipsters can reach paying VIP
@@ -182,9 +190,8 @@ router.post('/admin/bootstrap', async (req, res) => {
   if (!pin) return res.status(503).json({ error: 'Création admin par PIN non configurée.' });
   const { name, email, phone, password, pin: providedPin } = req.body || {};
   if (providedPin !== pin) return res.status(403).json({ error: 'PIN invalide.' });
-  if (!name || !email || !phone || !password) {
-    return res.status(400).json({ error: 'Nom, email, téléphone et mot de passe sont requis.' });
-  }
+  const validationError = validateContact({ name, email, phone, password });
+  if (validationError) return res.status(400).json({ error: validationError });
   try {
     const user = await User.create({ name, email, phone, password, role: 'admin' });
     const { token, refreshToken } = await issueTokenPair(user);
