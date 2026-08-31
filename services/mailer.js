@@ -221,6 +221,25 @@ function sendVipExpiringEmail(user, daysRemaining) {
   });
 }
 
+function sendNewPicksEmail(user, { message } = {}) {
+  const name = escapeHtml(user.name);
+  return sendMail({
+    to: user.email,
+    subject: 'Nouveaux pronostics VIP disponibles sur PeguyTbn',
+    html: renderEmail({
+      preheader: 'De nouveaux pronostics VIP viennent d\'être publiés.',
+      category: 'payment',
+      kicker: 'VIP',
+      heading: `De nouveaux pronostics t'attendent, ${name}`,
+      bodyHtml: `<p style="margin:0 0 12px;">${
+        message ? escapeHtml(message) : "Nos pronostiqueurs viennent de publier de nouvelles sélections VIP — jette-y un œil avant le coup d'envoi."
+      }</p>`,
+      ctaText: 'Voir les pronostics VIP',
+      ctaUrl: `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/pronostics-vip`,
+    }),
+  });
+}
+
 module.exports = {
   isConfigured,
   sendMail,
@@ -228,4 +247,5 @@ module.exports = {
   sendPasswordResetEmail,
   sendPaymentConfirmationEmail,
   sendVipExpiringEmail,
+  sendNewPicksEmail,
 };

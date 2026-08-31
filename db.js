@@ -23,6 +23,7 @@ function ensureSchema() {
       CREATE TABLE IF NOT EXISTS predictions (id text PRIMARY KEY, data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS payments (id text PRIMARY KEY, data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS audit_logs (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS admin_notifications (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
     `);
   }
   return schemaReady;
@@ -66,6 +67,17 @@ async function readAuditLogs({ limit = 200 } = {}) {
   return rows.map((r) => r.data);
 }
 
+async function appendAdminNotification(entry) {
+  await ensureSchema();
+  await pool.query('INSERT INTO admin_notifications (id, data) VALUES ($1, $2::jsonb)', [entry.id, JSON.stringify(entry)]);
+}
+
+async function readAdminNotifications({ limit = 30 } = {}) {
+  await ensureSchema();
+  const { rows } = await pool.query('SELECT data FROM admin_notifications ORDER BY created_at DESC LIMIT $1', [limit]);
+  return rows.map((r) => r.data);
+}
+
 module.exports = {
   ensureSchema,
   readUsers: () => readTable('users'),
@@ -76,4 +88,6 @@ module.exports = {
   writePayments: (data) => writeTable('payments', data),
   appendAuditLog,
   readAuditLogs,
+  appendAdminNotification,
+  readAdminNotifications,
 };
