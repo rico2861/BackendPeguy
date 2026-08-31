@@ -1,7 +1,7 @@
 const express = require('express');
 const moncash = require('../services/moncash');
 const nowpayments = require('../services/nowpayments');
-const { priceForPlan } = require('../services/plans');
+const { priceForPlan, PLANS } = require('../services/plans');
 const { reconcile } = require('../services/paymentService');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
 const Payment = require('../models/Payment');
@@ -9,6 +9,12 @@ const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Public: powers the pricing page — one source of truth (services/plans.js)
+// instead of duplicating prices in the frontend.
+router.get('/plans', (req, res) => {
+  res.json({ plans: PLANS });
+});
 
 const API_BASE = process.env.PUBLIC_API_URL || 'http://localhost:5000/api';
 const APP_BASE = process.env.PUBLIC_APP_URL || 'http://localhost:5173';
@@ -24,9 +30,9 @@ router.post('/moncash/create', authenticate, async (req, res) => {
       });
     }
 
-    const payment = Payment.create({ userId: req.user.id, planType, amountUsd: price.usd, amountHtg: price.htg, provider: 'moncash' });
+    const payment = await Payment.create({ userId: req.user.id, planType, amountUsd: price.usd, amountHtg: price.htg, provider: 'moncash' });
     const { redirectUrl } = await moncash.createPayment({ orderId: payment.id, amountHtg: price.htg });
-    Payment.update(payment.id, {}, { source: 'system', message: 'Lien de paiement MonCash généré', raw: { redirectUrl } });
+    await Payment.update(payment.id, {}, { source: 'system', message: 'Lien de paiement MonCash généré', raw: { redirectUrl } });
     res.json({ redirectUrl, paymentId: payment.id });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Erreur MonCash.' });
@@ -44,7 +50,7 @@ router.post('/nowpayments/create', authenticate, async (req, res) => {
       });
     }
 
-    const payment = Payment.create({ userId: req.user.id, planType, amountUsd: price.usd, provider: 'nowpayments' });
+    const payment = await Payment.create({ userId: req.user.id, planType, amountUsd: price.usd, provider: 'nowpayments' });
     const { invoiceId, invoiceUrl } = await nowpayments.createInvoice({
       orderId: payment.id,
       priceAmountUsd: price.usd,
@@ -54,7 +60,7 @@ router.post('/nowpayments/create', authenticate, async (req, res) => {
       ipnCallbackUrl: `${API_BASE}/payments/nowpayments/notify`,
       customerEmail: req.user.email,
     });
-    Payment.update(payment.id, { invoiceId }, { source: 'system', message: 'Facture NOWPayments créée', raw: { invoiceId, invoiceUrl } });
+    await Payment.update(payment.id, { invoiceId }, { source: 'system', message: 'Facture NOWPayments créée', raw: { invoiceId, invoiceUrl } });
     res.json({ redirectUrl: invoiceUrl, paymentId: payment.id });
   } catch (err) {
     res.status(502).json({ error: err.message || 'Erreur NOWPayments.' });
@@ -66,7 +72,7 @@ router.post('/nowpayments/create', authenticate, async (req, res) => {
 // happened, only that it's this user's most recent one.
 router.get('/status/latest', authenticate, async (req, res) => {
   try {
-    let payment = Payment.findLatestForUser(req.user.id);
+    let payment = await Payment.findLatestForUser(req.user.id);
     if (!payment) return res.json({ payment: null });
     payment = await reconcile(payment);
     res.json({ payment });
@@ -83,9 +89,9 @@ router.get('/status/latest', authenticate, async (req, res) => {
 router.post('/moncash/notify', async (req, res) => {
   try {
     const { orderId, transactionId } = req.body || {};
-    let payment = orderId ? Payment.findById(orderId) : null;
+    let payment = orderId ? await Payment.findById(orderId) : null;
     if (payment) {
-      Payment.update(payment.id, {}, { source: 'webhook', message: 'Callback MonCash reçu', raw: req.body });
+      await Payment.update(payment.id, {}, { source: 'webhook', message: 'Callback MonCash reçu', raw: req.body });
       await reconcile(payment, 'webhook');
     } else if (transactionId && moncash.isConfigured()) {
       const result = await moncash.retrieveByTransactionId(transactionId).catch(() => null);
@@ -108,24 +114,24 @@ router.post('/nowpayments/notify', async (req, res) => {
     }
 
     const { order_id: orderId, payment_id: providerPaymentId, payment_status: paymentStatus, pay_currency: payCurrency, actually_paid: actuallyPaid } = req.body || {};
-    const payment = orderId ? Payment.findById(orderId) : null;
+    const payment = orderId ? await Payment.findById(orderId) : null;
     if (payment && payment.status === 'pending') {
-      Payment.update(payment.id, {}, { source: 'webhook', message: `Callback NOWPayments reçu (${paymentStatus})`, raw: req.body });
+      await Payment.update(payment.id, {}, { source: 'webhook', message: `Callback NOWPayments reçu (${paymentStatus})`, raw: req.body });
       // Capture the real payment_id on the very first callback (even a
       // "waiting"/"confirming" one) — it's the only way we can later
       // re-verify this payment ourselves if a subsequent IPN is missed
       // (see services/paymentService.js for why).
       if (providerPaymentId && !payment.providerPaymentId) {
-        Payment.update(payment.id, { providerPaymentId, payCurrency: payCurrency || null });
+        await Payment.update(payment.id, { providerPaymentId, payCurrency: payCurrency || null });
       }
       const status = nowpayments.statusFromNowPayments(paymentStatus);
       if (status !== 'pending') {
-        Payment.update(
+        await Payment.update(
           payment.id,
           { status, actuallyPaid: actuallyPaid || null },
           { source: 'webhook', message: `Paiement réglé via webhook signé : ${status}`, raw: req.body }
         );
-        if (status === 'success') User.setPlan(payment.userId, { type: payment.planType });
+        if (status === 'success') await User.setPlan(payment.userId, { type: payment.planType });
       }
     }
   } catch (err) {
@@ -138,9 +144,9 @@ router.post('/nowpayments/notify', async (req, res) => {
 // providers — this is the direct answer to "how do I know a customer
 // really paid": check here. Status reflects the provider's own records
 // (see reconcile above), not just what the browser reported.
-router.get('/', authenticate, authorize('admin'), (req, res) => {
-  const users = new Map(User.findAll().map((u) => [u.id, u]));
-  const payments = Payment.listAll().map((p) => ({
+router.get('/', authenticate, authorize('admin'), async (req, res) => {
+  const users = new Map((await User.findAll()).map((u) => [u.id, u]));
+  const payments = (await Payment.listAll()).map((p) => ({
     ...p,
     userName: users.get(p.userId)?.name || 'Compte supprimé',
     userEmail: users.get(p.userId)?.email || null,
@@ -160,8 +166,8 @@ router.post('/sync-now', authenticate, authorize('admin'), async (req, res) => {
 // payment": every timestamped event from creation to settlement,
 // sourced from provider webhooks/API checks. Accessible to the admin
 // or to the customer the payment belongs to (their own receipt).
-router.get('/:id', authenticate, (req, res) => {
-  const payment = Payment.findById(req.params.id);
+router.get('/:id', authenticate, async (req, res) => {
+  const payment = await Payment.findById(req.params.id);
   if (!payment) return res.status(404).json({ error: 'Paiement introuvable.' });
   if (req.user.role !== 'admin' && payment.userId !== req.user.id) {
     return res.status(403).json({ error: 'Accès refusé.' });

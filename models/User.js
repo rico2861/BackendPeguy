@@ -25,21 +25,24 @@ function toPublic(user) {
   return { ...rest, isVip: computeIsVip(user) };
 }
 
-function findAll() {
-  return readUsers().map(toPublic);
+async function findAll() {
+  const users = await readUsers();
+  return users.map(toPublic);
 }
 
-function findById(id) {
-  return readUsers().find((u) => u.id === id) || null;
+async function findById(id) {
+  const users = await readUsers();
+  return users.find((u) => u.id === id) || null;
 }
 
-function findByEmail(email) {
+async function findByEmail(email) {
   const normalized = String(email || '').trim().toLowerCase();
-  return readUsers().find((u) => u.email === normalized) || null;
+  const users = await readUsers();
+  return users.find((u) => u.email === normalized) || null;
 }
 
-function create({ name, email, phone, password, role = 'user' }) {
-  const users = readUsers();
+async function create({ name, email, phone, password, role = 'user' }) {
+  const users = await readUsers();
   const normalizedEmail = String(email).trim().toLowerCase();
   if (users.some((u) => u.email === normalizedEmail)) {
     const err = new Error('Un compte existe déjà avec cet email.');
@@ -60,7 +63,7 @@ function create({ name, email, phone, password, role = 'user' }) {
     createdAt: new Date().toISOString(),
   };
   users.push(user);
-  writeUsers(users);
+  await writeUsers(users);
   return toPublic(user);
 }
 
@@ -69,25 +72,25 @@ function verifyPassword(user, password) {
   return bcrypt.compareSync(password, user.passwordHash);
 }
 
-function updateRole(id, role) {
+async function updateRole(id, role) {
   if (!ROLES.includes(role)) {
     const err = new Error('Rôle invalide.');
     err.status = 400;
     throw err;
   }
-  const users = readUsers();
+  const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   users[idx].role = role;
-  writeUsers(users);
+  await writeUsers(users);
   return toPublic(users[idx]);
 }
 
 // Sets (or extends from now) a VIP plan by type. `days` overrides the
 // default duration for that type — used by the admin panel's custom
 // extension. Passing no plan / clearPlan revokes access immediately.
-function setPlan(id, { type = 'trial', days } = {}) {
-  const users = readUsers();
+async function setPlan(id, { type = 'trial', days } = {}) {
+  const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   const duration = Number.isFinite(days) ? days : PLAN_DURATIONS_DAYS[type] || 30;
@@ -97,36 +100,36 @@ function setPlan(id, { type = 'trial', days } = {}) {
     startedAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + duration * 86_400_000).toISOString(),
   };
-  writeUsers(users);
+  await writeUsers(users);
   return toPublic(users[idx]);
 }
 
-function clearPlan(id) {
-  const users = readUsers();
+async function clearPlan(id) {
+  const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   users[idx].plan = null;
-  writeUsers(users);
+  await writeUsers(users);
   return toPublic(users[idx]);
 }
 
-function remove(id) {
-  const users = readUsers();
+async function remove(id) {
+  const users = await readUsers();
   const next = users.filter((u) => u.id !== id);
   const changed = next.length !== users.length;
-  if (changed) writeUsers(next);
+  if (changed) await writeUsers(next);
   return changed;
 }
 
-function toggleFavorite(id, predictionId) {
-  const users = readUsers();
+async function toggleFavorite(id, predictionId) {
+  const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   const favs = new Set(users[idx].favorites || []);
   if (favs.has(predictionId)) favs.delete(predictionId);
   else favs.add(predictionId);
   users[idx].favorites = Array.from(favs);
-  writeUsers(users);
+  await writeUsers(users);
   return toPublic(users[idx]);
 }
 

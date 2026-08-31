@@ -18,7 +18,7 @@ async function sweepPendingPayments() {
   let checked = 0;
   let settled = 0;
   try {
-    const pending = Payment.listAll().filter(
+    const pending = (await Payment.listAll()).filter(
       (p) => p.status === 'pending' && now - new Date(p.createdAt).getTime() < PENDING_MAX_AGE_MS
     );
     for (const payment of pending) {

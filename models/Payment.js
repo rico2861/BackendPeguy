@@ -17,8 +17,8 @@ function logEvent(payment, { source, message, raw }) {
   return payment;
 }
 
-function create({ userId, planType, amountUsd, amountHtg, provider }) {
-  const payments = readPayments();
+async function create({ userId, planType, amountUsd, amountHtg, provider }) {
+  const payments = await readPayments();
   const payment = {
     id: crypto.randomUUID(), // used as the provider-facing `orderId`
     userId,
@@ -40,19 +40,20 @@ function create({ userId, planType, amountUsd, amountHtg, provider }) {
   };
   logEvent(payment, { source: 'system', message: `Paiement créé (${provider}, ${planType})` });
   payments.push(payment);
-  writePayments(payments);
+  await writePayments(payments);
   return payment;
 }
 
-function findById(id) {
-  return readPayments().find((p) => p.id === id) || null;
+async function findById(id) {
+  const payments = await readPayments();
+  return payments.find((p) => p.id === id) || null;
 }
 
 // Most recent pending/just-created payment for a user — used by the
 // return pages, which MonCash redirects to without any identifying
 // transaction info attached.
-function findLatestForUser(userId) {
-  const payments = readPayments()
+async function findLatestForUser(userId) {
+  const payments = (await readPayments())
     .filter((p) => p.userId === userId)
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   return payments[0] || null;
@@ -60,19 +61,19 @@ function findLatestForUser(userId) {
 
 // `event` (optional) records this update in the payment's audit trail:
 // { source: 'webhook'|'manual-check'|'background-sweep'|'admin', message, raw }
-function update(id, data, event) {
-  const payments = readPayments();
+async function update(id, data, event) {
+  const payments = await readPayments();
   const idx = payments.findIndex((p) => p.id === id);
   if (idx === -1) return null;
   let payment = { ...payments[idx], ...data, updatedAt: nowIso() };
   if (event) payment = logEvent(payment, event);
   payments[idx] = payment;
-  writePayments(payments);
+  await writePayments(payments);
   return payments[idx];
 }
 
-function listAll() {
-  return [...readPayments()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+async function listAll() {
+  return [...(await readPayments())].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 module.exports = { create, findById, findLatestForUser, update, listAll };

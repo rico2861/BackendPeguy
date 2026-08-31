@@ -2,12 +2,23 @@ const express = require('express');
 const footballData = require('../services/footballData');
 const oddsApi = require('../services/oddsApi');
 const COMPETITIONS = require('../services/competitions');
+const { authenticateOptional } = require('../middleware/auth');
 
 const router = express.Router();
 
 const COMPETITION_BY_CODE = new Map(COMPETITIONS.map((c) => [c.code, c]));
 
-router.get('/live/matches', async (req, res) => {
+// Same masking principle as Prediction.maskForViewer: strip the field
+// rather than blur it client-side, and say so with `locked: true` — non-VIP
+// visitors (including anonymous ones) see the match but not its odds.
+function maskOddsForViewer(match, viewer) {
+  const isVip = viewer?.isVip || viewer?.role === 'moderator' || viewer?.role === 'admin';
+  if (isVip || !match.odds) return { ...match, locked: false };
+  const { odds, ...rest } = match;
+  return { ...rest, odds: null, locked: true };
+}
+
+router.get('/live/matches', authenticateOptional, async (req, res) => {
   const status = {
     scores: { configured: footballData.isConfigured(), source: 'football-data.org' },
     odds: { configured: oddsApi.isConfigured(), source: 'the-odds-api.com' },
@@ -54,11 +65,17 @@ router.get('/live/matches', async (req, res) => {
     );
   }
 
-  const enriched = matches.map((m) => {
+  let enriched = matches.map((m) => {
     const events = oddsByLeague.get(m.competition_code);
     const odds = events ? oddsApi.findOddsForMatch(events, m.home_team, m.away_team) : null;
     return { ...m, odds };
   });
+
+  if (req.query.status === 'live') {
+    enriched = enriched.filter((m) => m.status === 'live');
+  }
+
+  enriched = enriched.map((m) => maskOddsForViewer(m, req.user));
 
   if (oddsBlocked) {
     status.odds.blocked = true;

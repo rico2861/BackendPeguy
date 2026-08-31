@@ -33,7 +33,7 @@ async function syncPredictionsWithLiveResults({ force = false } = {}) {
   let updated = 0;
   try {
     const realMatches = await footballData.fetchRecentMatches(2);
-    const pending = Prediction.listPredictions({}).filter((p) => !p.result);
+    const pending = (await Prediction.listPredictions({})).filter((p) => !p.result);
 
     for (const pred of pending) {
       const real = findRealMatch(realMatches, pred);
@@ -56,14 +56,14 @@ async function syncPredictionsWithLiveResults({ force = false } = {}) {
       if (pred.status === 'FT' && real.status !== 'FT') continue;
 
       const before = pred;
-      const after = Prediction.applyLiveFacts(pred.id, facts);
+      const after = await Prediction.applyLiveFacts(pred.id, facts);
       if (after && (after.result !== before.result || after.score_home !== before.score_home || after.status !== before.status)) {
         updated += 1;
       }
     }
 
     // Catch anything with a manually-entered FT score that was never graded.
-    updated += Prediction.settleAll();
+    updated += await Prediction.settleAll();
 
     lastRun = { at: now, updated, error: null };
   } catch (err) {

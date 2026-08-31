@@ -51,7 +51,7 @@ async function reconcile(payment, source = 'manual-check') {
     };
     raw = found;
     if (status === 'pending') {
-      return Payment.update(payment.id, extra, {
+      return await Payment.update(payment.id, extra, {
         source,
         message: `Toujours en attente (statut fournisseur : ${found.payment_status})`,
         raw,
@@ -61,13 +61,13 @@ async function reconcile(payment, source = 'manual-check') {
     return payment;
   }
 
-  const updated = Payment.update(payment.id, { status, ...extra }, {
+  const updated = await Payment.update(payment.id, { status, ...extra }, {
     source,
     message: `Statut vérifié auprès de ${payment.provider} : ${status}`,
     raw,
   });
   if (status === 'success') {
-    User.setPlan(payment.userId, { type: payment.planType });
+    await User.setPlan(payment.userId, { type: payment.planType });
   }
   return updated;
 }

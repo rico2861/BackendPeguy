@@ -27,6 +27,7 @@ const userRoutes = require('./routes/users');
 const predictionRoutes = require('./routes/predictions');
 const liveRoutes = require('./routes/live');
 const paymentRoutes = require('./routes/payments');
+const uploadRoutes = require('./routes/uploads');
 const { syncPredictionsWithLiveResults } = require('./services/predictionSync');
 const { sweepPendingPayments } = require('./services/paymentSync');
 
@@ -47,6 +48,7 @@ app.use('/api/users', userRoutes);
 app.use('/api', predictionRoutes);
 app.use('/api', liveRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/uploads', uploadRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 // eslint-disable-next-line no-unused-vars
@@ -55,20 +57,26 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Erreur interne du serveur.' });
 });
 
-function bootstrapAdmin() {
+async function bootstrapAdmin() {
   const email = process.env.ADMIN_EMAIL;
   const password = process.env.ADMIN_PASSWORD;
   const name = process.env.ADMIN_NAME || 'Admin';
   if (!email || !password) return;
-  if (User.findByEmail(email)) return;
-  User.create({ name, email, password, role: 'admin' });
+  if (await User.findByEmail(email)) return;
+  await User.create({ name, email, password, role: 'admin' });
   console.log(`[seed] Compte admin créé : ${email}`);
 }
 
-bootstrapAdmin();
+async function start() {
+  await bootstrapAdmin();
+  app.listen(PORT, () => {
+    console.log(`PeguyTbn backend (Node/Express) listening on http://localhost:${PORT}`);
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`PeguyTbn backend (Node/Express) listening on http://localhost:${PORT}`);
+start().catch((err) => {
+  console.error('[startup] failed to start server:', err.message);
+  process.exit(1);
 });
 
 // Belt-and-braces: predictions also get synced on-demand (see

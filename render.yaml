@@ -15,6 +15,14 @@ services:
     dockerContext: .
     plan: free
     envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: peguytbn
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -52,7 +60,3 @@ services:
         sync: false
       - key: PUBLIC_APP_URL
         sync: false
-    disk:
-      name: peguytbn-backend-data
-      mountPath: /app/data
-      sizeGB: 1

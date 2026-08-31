@@ -1,42 +1,62 @@
-// Minimal file-based data store so the app runs with zero external
-// database setup. Swap this module for a real Postgres/Mongo client in
-// production — every function keeps the same shape (sync, plain objects
-// / arrays) so the rest of the app doesn't need to change.
-const fs = require('fs');
-const path = require('path');
+// Postgres-backed data store (Supabase). Each entity type keeps the same
+// shape as before (an array of plain objects) — reads pull every row's
+// `data` column, writes replace the whole table in one transaction — so
+// the models above didn't need to change their read-all/mutate/write-all
+// logic, only await it. At this app's scale (a handful of moderators'
+// worth of predictions/users/payments) a full-table rewrite per write is
+// simple and safe; if that ever becomes a bottleneck, switch the affected
+// write to a targeted UPSERT/DELETE instead of rewriting the whole table.
+const { Pool } = require('pg');
 
-const DATA_DIR = path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
-const PREDICTIONS_FILE = path.join(DATA_DIR, 'predictions.json');
-const PAYMENTS_FILE = path.join(DATA_DIR, 'payments.json');
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  // Supabase's pooler terminates TLS with a cert that isn't in Node's
+  // default trust store; this matches Supabase's own connection docs.
+  ssl: { rejectUnauthorized: false },
+});
 
-function ensureStore() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, '[]', 'utf-8');
-  if (!fs.existsSync(PREDICTIONS_FILE)) fs.writeFileSync(PREDICTIONS_FILE, '[]', 'utf-8');
-  if (!fs.existsSync(PAYMENTS_FILE)) fs.writeFileSync(PAYMENTS_FILE, '[]', 'utf-8');
+let schemaReady = null;
+function ensureSchema() {
+  if (!schemaReady) {
+    schemaReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, data jsonb NOT NULL);
+      CREATE TABLE IF NOT EXISTS predictions (id text PRIMARY KEY, data jsonb NOT NULL);
+      CREATE TABLE IF NOT EXISTS payments (id text PRIMARY KEY, data jsonb NOT NULL);
+    `);
+  }
+  return schemaReady;
 }
 
-function readJson(file) {
-  ensureStore();
+async function readTable(table) {
+  await ensureSchema();
+  const { rows } = await pool.query(`SELECT data FROM ${table}`);
+  return rows.map((r) => r.data);
+}
+
+async function writeTable(table, data) {
+  await ensureSchema();
+  const client = await pool.connect();
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf-8') || '[]');
-  } catch {
-    return [];
+    await client.query('BEGIN');
+    await client.query(`DELETE FROM ${table}`);
+    for (const item of data) {
+      await client.query(`INSERT INTO ${table} (id, data) VALUES ($1, $2::jsonb)`, [item.id, JSON.stringify(item)]);
+    }
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
-function writeJson(file, data) {
-  ensureStore();
-  fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8');
-}
-
 module.exports = {
-  ensureStore,
-  readUsers: () => readJson(USERS_FILE),
-  writeUsers: (data) => writeJson(USERS_FILE, data),
-  readPredictions: () => readJson(PREDICTIONS_FILE),
-  writePredictions: (data) => writeJson(PREDICTIONS_FILE, data),
-  readPayments: () => readJson(PAYMENTS_FILE),
-  writePayments: (data) => writeJson(PAYMENTS_FILE, data),
+  ensureSchema,
+  readUsers: () => readTable('users'),
+  writeUsers: (data) => writeTable('users', data),
+  readPredictions: () => readTable('predictions'),
+  writePredictions: (data) => writeTable('predictions', data),
+  readPayments: () => readTable('payments'),
+  writePayments: (data) => writeTable('payments', data),
 };

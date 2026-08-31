@@ -29,20 +29,25 @@ const MATCHES_TOMORROW_TICKETS = [
   { country: 'Slovénie', league: '1. SNL', flag: 'si', home_team: 'Grosuplje', away_team: 'Celje', match_time: '12:00', status: 'upcoming', market: 'Number of goals', pick: '+2.5', odd: 1.57, ticket_group: 'risk-1', ticket_type: 'Risk', featured: true, is_vip: true },
 ];
 
-function run() {
-  const existing = readPredictions();
+async function run() {
+  const existing = await readPredictions();
   if (existing.length > 0) {
     console.log(`[seed] ${existing.length} pronostics déjà présents — seed ignoré.`);
     return;
   }
 
   for (const m of MATCHES_TODAY) {
-    Prediction.createPrediction({ ...m, match_date: TODAY }, 'seed', 'PeguyTbn');
+    await Prediction.createPrediction({ ...m, match_date: TODAY }, 'seed', 'PeguyTbn');
   }
   for (const m of MATCHES_TOMORROW_TICKETS) {
-    Prediction.createPrediction({ ...m, match_date: TOMORROW }, 'seed', 'PeguyTbn');
+    await Prediction.createPrediction({ ...m, match_date: TOMORROW }, 'seed', 'PeguyTbn');
   }
   console.log(`[seed] ${MATCHES_TODAY.length + MATCHES_TOMORROW_TICKETS.length} pronostics insérés.`);
 }
 
-run();
+run()
+  .catch((err) => {
+    console.error('[seed] failed:', err.message);
+    process.exitCode = 1;
+  })
+  .finally(() => process.exit());

@@ -1,7 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) {
@@ -9,7 +9,7 @@ function authenticate(req, res, next) {
   }
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const user = User.findById(payload.sub);
+    const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Utilisateur introuvable.' });
     req.user = User.toPublic(user);
     next();
@@ -20,13 +20,13 @@ function authenticate(req, res, next) {
 
 // Optional auth: attaches req.user if a valid token is present, but never
 // blocks the request (used on public endpoints like GET /predictions).
-function authenticateOptional(req, res, next) {
+async function authenticateOptional(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return next();
   try {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
-    const user = User.findById(payload.sub);
+    const user = await User.findById(payload.sub);
     if (user) req.user = User.toPublic(user);
   } catch {
     // ignore invalid token on optional routes

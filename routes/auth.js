@@ -13,7 +13,7 @@ function signToken(user) {
   );
 }
 
-router.post('/register', (req, res) => {
+router.post('/register', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body;
     if (!name || !email || !phone || !password) {
@@ -26,7 +26,7 @@ router.post('/register', (req, res) => {
     // to moderator/admin can only be granted by an admin afterwards. The
     // phone number is required so admins/tipsters can reach paying VIP
     // members (see GET /api/users).
-    const user = User.create({ name, email, phone, password, role: 'user' });
+    const user = await User.create({ name, email, phone, password, role: 'user' });
     const token = signToken(user);
     res.status(201).json({ token, user });
   } catch (err) {
@@ -34,12 +34,12 @@ router.post('/register', (req, res) => {
   }
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: 'Email et mot de passe sont requis.' });
   }
-  const user = User.findByEmail(email);
+  const user = await User.findByEmail(email);
   if (!user || !User.verifyPassword(user, password)) {
     return res.status(401).json({ error: 'Email ou mot de passe incorrect.' });
   }
@@ -51,8 +51,8 @@ router.get('/me', authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
-router.post('/favorites/:predictionId', authenticate, (req, res) => {
-  const updated = User.toggleFavorite(req.user.id, req.params.predictionId);
+router.post('/favorites/:predictionId', authenticate, async (req, res) => {
+  const updated = await User.toggleFavorite(req.user.id, req.params.predictionId);
   res.json({ user: updated });
 });
 
@@ -61,13 +61,13 @@ router.post('/favorites/:predictionId', authenticate, (req, res) => {
 // end to end. Replace with a real checkout flow before going to
 // production. Access expires on its own (see User.computeIsVip) — no
 // separate "cancel" cleanup job needed for expiry, only for early exit.
-router.post('/vip/activate-trial', authenticate, (req, res) => {
-  const updated = User.setPlan(req.user.id, { type: 'trial' });
+router.post('/vip/activate-trial', authenticate, async (req, res) => {
+  const updated = await User.setPlan(req.user.id, { type: 'trial' });
   res.json({ user: updated });
 });
 
-router.post('/vip/cancel', authenticate, (req, res) => {
-  const updated = User.clearPlan(req.user.id);
+router.post('/vip/cancel', authenticate, async (req, res) => {
+  const updated = await User.clearPlan(req.user.id);
   res.json({ user: updated });
 });
 

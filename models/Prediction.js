@@ -6,8 +6,8 @@ function nowIso() {
   return new Date().toISOString();
 }
 
-function listPredictions({ date, league, country, market, q, ticketType } = {}) {
-  let preds = readPredictions();
+async function listPredictions({ date, league, country, market, q, ticketType } = {}) {
+  let preds = await readPredictions();
   if (date) preds = preds.filter((p) => p.match_date === date);
   if (league) preds = preds.filter((p) => p.league === league);
   if (country) preds = preds.filter((p) => p.country === country);
@@ -29,12 +29,13 @@ function listPredictions({ date, league, country, market, q, ticketType } = {}) 
   );
 }
 
-function getPrediction(id) {
-  return readPredictions().find((p) => p.id === id) || null;
+async function getPrediction(id) {
+  const preds = await readPredictions();
+  return preds.find((p) => p.id === id) || null;
 }
 
-function listLeagues() {
-  const preds = readPredictions();
+async function listLeagues() {
+  const preds = await readPredictions();
   const seen = new Map();
   for (const p of preds) {
     const key = `${p.country}-${p.league}`;
@@ -43,8 +44,8 @@ function listLeagues() {
   return Array.from(seen.values()).sort((a, b) => a.league.localeCompare(b.league));
 }
 
-function createPrediction(data, userId, userName) {
-  const preds = readPredictions();
+async function createPrediction(data, userId, userName) {
+  const preds = await readPredictions();
   const ts = nowIso();
   const pred = {
     id: crypto.randomUUID(),
@@ -86,12 +87,12 @@ function createPrediction(data, userId, userName) {
   };
   const settled = trySettle(pred);
   preds.push(settled);
-  writePredictions(preds);
+  await writePredictions(preds);
   return settled;
 }
 
-function updatePrediction(id, data) {
-  const preds = readPredictions();
+async function updatePrediction(id, data) {
+  const preds = await readPredictions();
   const idx = preds.findIndex((p) => p.id === id);
   if (idx === -1) return null;
   const existing = preds[idx];
@@ -113,7 +114,7 @@ function updatePrediction(id, data) {
   };
   const settled = trySettle(merged);
   preds[idx] = settled;
-  writePredictions(preds);
+  await writePredictions(preds);
   return settled;
 }
 
@@ -131,15 +132,15 @@ function trySettle(pred, settledBy = 'auto') {
 
 // Sweeps every unsettled, finished prediction and grades what it can.
 // Called after every sync with live results, and safe to call anytime.
-function settleAll() {
-  const preds = readPredictions();
+async function settleAll() {
+  const preds = await readPredictions();
   let changed = 0;
   const next = preds.map((p) => {
     const settled = trySettle(p);
     if (settled !== p) changed += 1;
     return settled;
   });
-  if (changed) writePredictions(next);
+  if (changed) await writePredictions(next);
   return changed;
 }
 
@@ -147,22 +148,22 @@ function settleAll() {
 // (score, status, matchday, referee...) into a prediction, then attempts
 // to grade it. Only ever moves a prediction toward more information —
 // never blanks out fields the sync didn't have an answer for.
-function applyLiveFacts(id, facts) {
-  const preds = readPredictions();
+async function applyLiveFacts(id, facts) {
+  const preds = await readPredictions();
   const idx = preds.findIndex((p) => p.id === id);
   if (idx === -1) return null;
   const merged = { ...preds[idx], ...facts, updated_at: nowIso() };
   const settled = trySettle(merged);
   preds[idx] = settled;
-  writePredictions(preds);
+  await writePredictions(preds);
   return settled;
 }
 
-function deletePrediction(id) {
-  const preds = readPredictions();
+async function deletePrediction(id) {
+  const preds = await readPredictions();
   const next = preds.filter((p) => p.id !== id);
   const changed = next.length !== preds.length;
-  if (changed) writePredictions(next);
+  if (changed) await writePredictions(next);
   return changed;
 }
 
@@ -181,8 +182,8 @@ function maskForViewer(pred, viewer) {
   return { ...rest, pick: null, odd: null, probability: null, locked: true };
 }
 
-function dailyTickets(date, viewer) {
-  const preds = listPredictions({ date }).filter((p) => p.ticket_group);
+async function dailyTickets(date, viewer) {
+  const preds = (await listPredictions({ date })).filter((p) => p.ticket_group);
   const groups = new Map();
   for (const p of preds) {
     if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, legs: [] });
