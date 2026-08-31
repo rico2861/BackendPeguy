@@ -37,56 +37,96 @@ function escapeHtml(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Per-category accent — same palette the app already uses (see frontend
+// tailwind.config.js) so "compte"/"sécurité"/"paiement" read as distinct
+// at a glance, the way Stripe/Linear-style transactional emails do.
+const ACCENTS = {
+  account: { soft: '#F4C578', mid: '#E8A33D', dim: '#3A2E14', label: 'COMPTE' },
+  security: { soft: '#60A5FA', mid: '#3B82F6', dim: '#132038', label: 'SÉCURITÉ' },
+  payment: { soft: '#37D999', mid: '#1FAE7A', dim: '#123B2C', label: 'PAIEMENT' },
+};
+
 // Table-based layout with inline styles — the only markup that renders
-// consistently across Gmail/Outlook/Apple Mail. A dark header band with
-// the PeguyTbn wordmark (matches the app's sidebar), a light content card
-// for readability regardless of the client's own dark mode, and an
-// optional gold CTA button — same visual language as the app itself
-// (see frontend tailwind.config.js: base #0A0D13, gold #E8A33D).
-function renderEmail({ preheader = '', heading, bodyHtml, ctaText, ctaUrl, footerNote }) {
+// consistently across Gmail/Outlook/Apple Mail. A full-bleed dark hero
+// with the PeguyTbn wordmark, a white content card that overlaps it
+// slightly (depth without relying on box-shadow, which most clients
+// strip), a category eyebrow + colored accent bar, and a pill CTA.
+function renderEmail({ preheader = '', category = 'account', kicker, heading, bodyHtml, ctaText, ctaUrl, footerNote }) {
+  const accent = ACCENTS[category] || ACCENTS.account;
   return `<!doctype html>
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
     <title>PeguyTbn</title>
   </head>
-  <body style="margin:0;padding:0;background:#0A0D13;font-family:Helvetica,Arial,sans-serif;">
+  <body style="margin:0;padding:0;background:#F3F4F7;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;">${escapeHtml(preheader)}</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#0A0D13;padding:32px 16px;">
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#F3F4F7;">
       <tr>
-        <td align="center">
+        <td align="center" style="padding:0 16px;">
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;">
+
+            <!-- Hero -->
             <tr>
-              <td align="center" style="padding-bottom:20px;">
-                <span style="display:inline-block;width:36px;height:36px;border-radius:10px;background:linear-gradient(180deg,#F4C578,#E8A33D);color:#221503;font-weight:700;font-size:18px;line-height:36px;text-align:center;font-family:Georgia,serif;">P</span>
-                <div style="color:#F1F4F9;font-weight:700;font-size:16px;letter-spacing:-0.02em;margin-top:8px;">PeguyTbn</div>
-                <div style="color:#8892A6;font-size:10px;font-weight:600;letter-spacing:0.12em;text-transform:uppercase;">Predictions Terminal</div>
+              <td style="background:#0A0D13;border-radius:16px 16px 0 0;padding:36px 28px 56px;" align="center">
+                <table role="presentation" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td style="width:38px;height:38px;border-radius:11px;background:linear-gradient(180deg,#F4C578,#E8A33D);text-align:center;vertical-align:middle;">
+                      <span style="color:#221503;font-weight:800;font-size:19px;font-family:Georgia,serif;line-height:38px;">P</span>
+                    </td>
+                    <td style="padding-left:11px;text-align:left;">
+                      <div style="color:#F1F4F9;font-weight:700;font-size:16px;letter-spacing:-0.01em;">PeguyTbn</div>
+                      <div style="color:#6B7386;font-size:9px;font-weight:700;letter-spacing:0.14em;">PREDICTIONS TERMINAL</div>
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
+
+            <!-- Card (pulled up over the hero) -->
             <tr>
-              <td style="background:#ffffff;border-radius:14px;padding:32px 28px;">
-                <h1 style="margin:0 0 16px;color:#11151F;font-size:19px;font-weight:700;">${escapeHtml(heading)}</h1>
-                <div style="color:#3A4356;font-size:14px;line-height:1.6;">${bodyHtml}</div>
-                ${
-                  ctaText && ctaUrl
-                    ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:24px;">
-                        <tr>
-                          <td style="border-radius:10px;background:linear-gradient(180deg,#F4C578,#E8A33D);">
-                            <a href="${ctaUrl}" style="display:inline-block;padding:12px 22px;color:#221503;font-weight:700;font-size:14px;text-decoration:none;">${escapeHtml(ctaText)}</a>
-                          </td>
-                        </tr>
-                      </table>`
-                    : ''
-                }
+              <td style="padding:0 12px;">
+                <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;margin-top:-40px;border:1px solid #E7E9EF;">
+                  <tr>
+                    <td style="height:4px;background:linear-gradient(90deg,${accent.mid},${accent.soft});border-radius:16px 16px 0 0;font-size:0;line-height:0;">&nbsp;</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:32px 28px 28px;">
+                      ${
+                        kicker
+                          ? `<span style="display:inline-block;background:${accent.dim};color:${accent.soft};font-size:10px;font-weight:800;letter-spacing:0.1em;padding:4px 10px;border-radius:999px;margin-bottom:14px;">${escapeHtml(kicker)}</span><br/>`
+                          : ''
+                      }
+                      <h1 style="margin:0 0 16px;color:#11151F;font-size:20px;font-weight:700;line-height:1.3;">${escapeHtml(heading)}</h1>
+                      <div style="color:#4B5468;font-size:14px;line-height:1.65;">${bodyHtml}</div>
+                      ${
+                        ctaText && ctaUrl
+                          ? `<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:26px;">
+                              <tr>
+                                <td style="border-radius:999px;background:linear-gradient(180deg,#F4C578,#E8A33D);">
+                                  <a href="${ctaUrl}" style="display:inline-block;padding:13px 26px;color:#221503;font-weight:700;font-size:14px;text-decoration:none;border-radius:999px;">${escapeHtml(ctaText)}</a>
+                                </td>
+                              </tr>
+                            </table>`
+                          : ''
+                      }
+                    </td>
+                  </tr>
+                </table>
               </td>
             </tr>
+
+            <!-- Footer -->
             <tr>
-              <td align="center" style="padding-top:20px;color:#8892A6;font-size:11px;line-height:1.6;">
-                ${footerNote ? escapeHtml(footerNote) + '<br/>' : ''}
+              <td align="center" style="padding:22px 16px 36px;color:#9AA1B2;font-size:11px;line-height:1.7;">
+                ${footerNote ? `${escapeHtml(footerNote)}<br/>` : ''}
                 PeguyTbn — Pronostics football, cotes et probabilités en temps réel.
               </td>
             </tr>
+
           </table>
         </td>
       </tr>
@@ -102,6 +142,8 @@ function sendWelcomeEmail(user) {
     subject: 'Bienvenue sur PeguyTbn',
     html: renderEmail({
       preheader: 'Ton compte PeguyTbn est prêt.',
+      category: 'account',
+      kicker: 'COMPTE',
       heading: `Bienvenue, ${name} 👋`,
       bodyHtml: `<p style="margin:0 0 12px;">Ton compte PeguyTbn est créé. Retrouve chaque jour :</p>
         <ul style="margin:0 0 12px;padding-left:18px;">
@@ -123,10 +165,12 @@ function sendPasswordResetEmail(user, resetLink) {
     subject: 'Réinitialisation de ton mot de passe PeguyTbn',
     html: renderEmail({
       preheader: 'Réinitialise ton mot de passe (lien valable 1 heure).',
+      category: 'security',
+      kicker: 'SÉCURITÉ',
       heading: `Réinitialisation du mot de passe`,
       bodyHtml: `<p style="margin:0 0 12px;">Bonjour ${name},</p>
         <p style="margin:0 0 12px;">Clique sur le bouton ci-dessous pour choisir un nouveau mot de passe. Ce lien est valable <strong>1 heure</strong>.</p>
-        <p style="margin:0;color:#8892A6;font-size:12px;">Si tu n'es pas à l'origine de cette demande, ignore simplement cet email — ton mot de passe actuel reste inchangé.</p>`,
+        <p style="margin:0;color:#9AA1B2;font-size:12px;">Si tu n'es pas à l'origine de cette demande, ignore simplement cet email — ton mot de passe actuel reste inchangé.</p>`,
       ctaText: 'Choisir un nouveau mot de passe',
       ctaUrl: resetLink,
     }),
@@ -141,6 +185,8 @@ function sendPaymentConfirmationEmail(user, payment) {
     subject: 'Paiement confirmé — Bienvenue en Premium PeguyTbn',
     html: renderEmail({
       preheader: 'Ton accès Premium PeguyTbn est actif.',
+      category: 'payment',
+      kicker: 'PAIEMENT',
       heading: `Paiement confirmé 🎉`,
       bodyHtml: `<p style="margin:0 0 12px;">Bonjour ${name},</p>
         <p style="margin:0 0 12px;">Ton paiement de <strong>${payment.amountUsd} $</strong> a été confirmé. Ton accès <strong>Premium</strong> est actif${days ? ` pour ${days} jours` : ''}.</p>
