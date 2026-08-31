@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const express = require('express');
 const Prediction = require('../models/Prediction');
 const { authenticate, authorize } = require('../middleware/auth');
+const { recordAudit } = require('../middleware/audit');
 
 const router = express.Router();
 
@@ -44,6 +45,11 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
   }
 
   const totalOdd = createdLegs.reduce((acc, leg) => acc * leg.odd, 1);
+  recordAudit(req, {
+    action: 'combo.created',
+    target: `combo:${ticketGroup}`,
+    newValue: { type: type || 'Double', legs: createdLegs.length, total_odd: Math.round(totalOdd * 100) / 100 },
+  });
   res.status(201).json({
     ticket: {
       id: ticketGroup,
@@ -67,6 +73,11 @@ router.delete('/:groupId', authenticate, authorize('moderator', 'admin'), async 
   for (const leg of legs) {
     await Prediction.deletePrediction(leg.id);
   }
+  recordAudit(req, {
+    action: 'combo.deleted',
+    target: `combo:${req.params.groupId}`,
+    previousValue: { type: legs[0].ticket_type, legs: legs.length },
+  });
   res.status(204).end();
 });
 

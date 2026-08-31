@@ -22,6 +22,7 @@ function ensureSchema() {
       CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS predictions (id text PRIMARY KEY, data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS payments (id text PRIMARY KEY, data jsonb NOT NULL);
+      CREATE TABLE IF NOT EXISTS audit_logs (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
     `);
   }
   return schemaReady;
@@ -51,6 +52,20 @@ async function writeTable(table, data) {
   }
 }
 
+// Audit logs are append-only and can grow fast — unlike the tables above,
+// this one gets a single targeted INSERT per write instead of a full
+// rewrite, and reads are capped instead of pulling every row.
+async function appendAuditLog(entry) {
+  await ensureSchema();
+  await pool.query('INSERT INTO audit_logs (id, data) VALUES ($1, $2::jsonb)', [entry.id, JSON.stringify(entry)]);
+}
+
+async function readAuditLogs({ limit = 200 } = {}) {
+  await ensureSchema();
+  const { rows } = await pool.query('SELECT data FROM audit_logs ORDER BY created_at DESC LIMIT $1', [limit]);
+  return rows.map((r) => r.data);
+}
+
 module.exports = {
   ensureSchema,
   readUsers: () => readTable('users'),
@@ -59,4 +74,6 @@ module.exports = {
   writePredictions: (data) => writeTable('predictions', data),
   readPayments: () => readTable('payments'),
   writePayments: (data) => writeTable('payments', data),
+  appendAuditLog,
+  readAuditLogs,
 };

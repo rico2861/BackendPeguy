@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Payment = require('../models/Payment');
 const mailer = require('../services/mailer');
 const { authenticate } = require('../middleware/auth');
+const { recordAudit } = require('../middleware/audit');
 
 const router = express.Router();
 
@@ -187,6 +188,11 @@ router.post('/admin/bootstrap', async (req, res) => {
   try {
     const user = await User.create({ name, email, phone, password, role: 'admin' });
     const { token, refreshToken } = await issueTokenPair(user);
+    recordAudit(req, {
+      action: 'admin.bootstrap_created',
+      target: `user:${user.id} (${user.email})`,
+      newValue: { name: user.name, email: user.email, role: user.role },
+    });
     res.status(201).json({ token, refreshToken, user });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });

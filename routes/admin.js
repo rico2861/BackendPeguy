@@ -2,6 +2,7 @@ const express = require('express');
 const User = require('../models/User');
 const Prediction = require('../models/Prediction');
 const Payment = require('../models/Payment');
+const AuditLog = require('../models/AuditLog');
 const { authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -117,6 +118,11 @@ router.get('/dashboard', async (req, res) => {
     },
     charts: { revenueDaily, subscriptionsDaily },
   });
+});
+
+router.get('/audit-logs', async (req, res) => {
+  const logs = await AuditLog.list({ limit: 500 });
+  res.json({ logs });
 });
 
 module.exports = router;

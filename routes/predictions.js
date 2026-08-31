@@ -1,6 +1,7 @@
 const express = require('express');
 const Prediction = require('../models/Prediction');
 const { authenticateOptional, authenticate, authorize } = require('../middleware/auth');
+const { recordAudit } = require('../middleware/audit');
 const { syncPredictionsWithLiveResults } = require('../services/predictionSync');
 
 const router = express.Router();
@@ -85,6 +86,11 @@ router.post('/predictions', authenticate, authorize('moderator', 'admin'), async
     return res.status(400).json({ error: `Champs manquants : ${missing.join(', ')}` });
   }
   const pred = await Prediction.createPrediction(data, req.user.id, data.created_by_name || req.user.email);
+  recordAudit(req, {
+    action: 'prediction.created',
+    target: `prediction:${pred.id} (${pred.home_team} vs ${pred.away_team})`,
+    newValue: { market: pred.market, pick: pred.pick, odd: pred.odd },
+  });
   res.status(201).json({ prediction: pred });
 });
 
@@ -100,6 +106,12 @@ router.put('/predictions/:id', authenticate, authorize('moderator', 'admin'), as
     return res.status(403).json({ error: 'Vous ne pouvez modifier que vos propres pronostics.' });
   }
   const updated = await Prediction.updatePrediction(req.params.id, req.body || {});
+  recordAudit(req, {
+    action: existing.result !== updated.result ? 'prediction.result_changed' : 'prediction.updated',
+    target: `prediction:${updated.id} (${updated.home_team} vs ${updated.away_team})`,
+    previousValue: { pick: existing.pick, market: existing.market, result: existing.result, score: `${existing.score_home ?? '-'}-${existing.score_away ?? '-'}` },
+    newValue: { pick: updated.pick, market: updated.market, result: updated.result, score: `${updated.score_home ?? '-'}-${updated.score_away ?? '-'}` },
+  });
   res.json({ prediction: updated });
 });
 
@@ -110,6 +122,11 @@ router.delete('/predictions/:id', authenticate, authorize('moderator', 'admin'),
     return res.status(403).json({ error: 'Vous ne pouvez supprimer que vos propres pronostics.' });
   }
   await Prediction.deletePrediction(req.params.id);
+  recordAudit(req, {
+    action: 'prediction.deleted',
+    target: `prediction:${existing.id} (${existing.home_team} vs ${existing.away_team})`,
+    previousValue: { market: existing.market, pick: existing.pick, odd: existing.odd },
+  });
   res.status(204).end();
 });
 
