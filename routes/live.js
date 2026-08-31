@@ -1,8 +1,9 @@
 const express = require('express');
 const footballData = require('../services/footballData');
 const oddsApi = require('../services/oddsApi');
+const sofascore = require('../services/sofascore');
 const COMPETITIONS = require('../services/competitions');
-const { authenticateOptional } = require('../middleware/auth');
+const { authenticateOptional, authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -65,6 +66,25 @@ router.get('/live/fixtures', authenticateOptional, async (req, res) => {
     res.json({ matches: enriched });
   } catch (err) {
     res.status(502).json({ matches: [], error: err.message });
+  }
+});
+
+// Free-text worldwide team/match search (Sofascore via RapidAPI), used
+// by the moderator's match picker beyond the 8 fixed football-data.org
+// leagues. Moderator/admin only — not a public-facing endpoint.
+router.get('/live/search', authenticate, authorize('moderator', 'admin'), async (req, res) => {
+  const query = (req.query.query || '').trim();
+  if (query.length < 2) return res.json({ results: [] });
+
+  if (!sofascore.isConfigured()) {
+    return res.json({ results: [], message: 'Recherche indisponible : ajoutez SOFASCORE_RAPIDAPI_KEY dans backend/.env.' });
+  }
+
+  try {
+    const results = await sofascore.search(query);
+    res.json({ results });
+  } catch (err) {
+    res.status(502).json({ results: [], error: err.message });
   }
 });
 
