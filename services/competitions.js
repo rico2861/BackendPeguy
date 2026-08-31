@@ -10,4 +10,8 @@ module.exports = [
   { code: 'DED', country: 'Pays-Bas', league: 'Eredivisie', oddsSportKey: 'soccer_netherlands_eredivisie' },
   { code: 'PPL', country: 'Portugal', league: 'Primeira Liga', oddsSportKey: 'soccer_portugal_primeira_liga' },
   { code: 'CL', country: 'Europe', league: 'Champions League', oddsSportKey: 'soccer_uefa_champs_league' },
+  { code: 'BSA', country: 'Brésil', league: 'Série A', oddsSportKey: 'soccer_brazil_campeonato' },
+  { code: 'ELC', country: 'Angleterre', league: 'Championship', oddsSportKey: 'soccer_efl_champ' },
+  { code: 'WC', country: 'Monde', league: 'Coupe du Monde', oddsSportKey: 'soccer_fifa_world_cup' },
+  { code: 'EC', country: 'Europe', league: 'Euro (Coupe d\'Europe des Nations)', oddsSportKey: 'soccer_uefa_european_championship' },
 ];
