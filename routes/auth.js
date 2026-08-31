@@ -108,6 +108,41 @@ router.get('/me', authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
+// Name/phone only — email is never editable here (it's the login
+// identifier and ties together payments/audit history).
+router.put('/me', authenticate, async (req, res) => {
+  const { name, phone } = req.body || {};
+  if (name !== undefined && (!name.trim() || name.length > 200)) {
+    return res.status(400).json({ error: 'Nom invalide.' });
+  }
+  if (phone !== undefined && (!phone.trim() || phone.length > 50)) {
+    return res.status(400).json({ error: 'Téléphone invalide.' });
+  }
+  const updated = await User.updateProfile(req.user.id, { name, phone });
+  res.json({ user: updated });
+});
+
+// Logged-in OTP reset flow for the Paramètres page — distinct from
+// /forgot-password (logged-out, link-based): this one is tied to the
+// authenticated account, so no email has to be typed/guessed.
+router.post('/settings/request-otp', authenticate, async (req, res) => {
+  const otp = await User.setResetOtp(req.user.id);
+  mailer
+    .sendOtpEmail(req.user, otp)
+    .catch((err) => console.error('[mailer] otp email failed:', err.message));
+  res.json({ message: `Code envoyé à ${req.user.email}.` });
+});
+
+router.post('/settings/reset-password', authenticate, async (req, res) => {
+  const { otp, password } = req.body || {};
+  if (!otp || !password) return res.status(400).json({ error: 'Code et mot de passe sont requis.' });
+  if (password.length < 6) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+  const user = await User.findByResetToken(otp);
+  if (!user || user.id !== req.user.id) return res.status(400).json({ error: 'Code invalide ou expiré.' });
+  await User.setPassword(user.id, password);
+  res.json({ message: 'Mot de passe mis à jour.' });
+});
+
 router.post('/favorites/:predictionId', authenticate, async (req, res) => {
   const updated = await User.toggleFavorite(req.user.id, req.params.predictionId);
   res.json({ user: updated });

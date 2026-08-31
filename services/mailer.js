@@ -221,6 +221,24 @@ function sendVipExpiringEmail(user, daysRemaining) {
   });
 }
 
+function sendOtpEmail(user, otp) {
+  const name = escapeHtml(user.name);
+  return sendMail({
+    to: user.email,
+    subject: `${otp} — Code de réinitialisation PeguyTbn`,
+    html: renderEmail({
+      preheader: `Ton code: ${otp} (valable 10 minutes).`,
+      category: 'security',
+      kicker: 'SÉCURITÉ',
+      heading: 'Code de réinitialisation',
+      bodyHtml: `<p style="margin:0 0 16px;">Bonjour ${name},</p>
+        <p style="margin:0 0 16px;">Voici ton code pour réinitialiser ton mot de passe :</p>
+        <p style="margin:0 0 16px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:700;letter-spacing:0.15em;color:#11151F;">${escapeHtml(otp)}</p>
+        <p style="margin:0;color:#9AA1B2;font-size:12px;">Ce code est valable <strong>10 minutes</strong>. Si tu n'es pas à l'origine de cette demande, ignore cet e-mail.</p>`,
+    }),
+  });
+}
+
 function sendNewPicksEmail(user, { message } = {}) {
   const name = escapeHtml(user.name);
   return sendMail({
@@ -248,4 +266,5 @@ module.exports = {
   sendPaymentConfirmationEmail,
   sendVipExpiringEmail,
   sendNewPicksEmail,
+  sendOtpEmail,
 };

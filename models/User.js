@@ -205,6 +205,31 @@ async function setResetToken(id) {
   return token; // plain token — only ever returned here, to be emailed
 }
 
+// Same secret/expiry fields as setResetToken (findByResetToken hashes and
+// compares regardless of shape), just a short numeric code instead of a
+// long hex token, and a shorter 10-minute window — used by the logged-in
+// Settings page ("reset via OTP") instead of the logged-out email-link flow.
+async function setResetOtp(id) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1) return null;
+  const otp = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
+  users[idx].resetTokenHash = hashToken(otp);
+  users[idx].resetTokenExpiresAt = new Date(Date.now() + 10 * 60_000).toISOString(); // 10 min
+  await writeUsers(users);
+  return otp;
+}
+
+async function updateProfile(id, { name, phone } = {}) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1) return null;
+  if (name !== undefined && name.trim()) users[idx].name = name.trim();
+  if (phone !== undefined && phone.trim()) users[idx].phone = phone.trim();
+  await writeUsers(users);
+  return toPublic(users[idx]);
+}
+
 async function findByResetToken(token) {
   const users = await readUsers();
   const hash = hashToken(token);
@@ -279,7 +304,9 @@ module.exports = {
   clearRefreshToken,
   verifyRefreshToken,
   setResetToken,
+  setResetOtp,
   findByResetToken,
+  updateProfile,
   setPassword,
   addPushSubscription,
   removePushSubscription,
