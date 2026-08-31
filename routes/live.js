@@ -18,6 +18,56 @@ function maskOddsForViewer(match, viewer) {
   return { ...rest, odds: null, locked: true };
 }
 
+// Static country -> league list for the moderator's cascading picker
+// (pays -> championnat). Doesn't touch football-data.org, so it's free
+// and instant even when the API key/quota is unavailable.
+router.get('/live/competitions', (req, res) => {
+  res.json({ competitions: COMPETITIONS });
+});
+
+// Real upcoming/live/recent fixtures for one competition, used by the
+// moderator's match picker so a prediction is built from an actual
+// scheduled match (real date/time/teams) instead of free-typed data.
+router.get('/live/fixtures', authenticateOptional, async (req, res) => {
+  const { competition, days = 10 } = req.query;
+  const comp = COMPETITION_BY_CODE.get(competition);
+  if (!comp) return res.status(400).json({ error: 'Championnat inconnu.' });
+
+  if (!footballData.isConfigured()) {
+    return res.json({
+      matches: [],
+      message: "Aucune donnée réelle disponible : ajoutez FOOTBALL_DATA_API_KEY dans backend/.env.",
+    });
+  }
+
+  try {
+    const today = new Date();
+    const dateFrom = today.toISOString().slice(0, 10);
+    const to = new Date(today);
+    to.setUTCDate(to.getUTCDate() + Number(days));
+    const matches = (await footballData.fetchMatchesInRange(dateFrom, to.toISOString().slice(0, 10)))
+      .filter((m) => m.competition_code === competition);
+
+    let events = null;
+    if (comp.oddsSportKey && oddsApi.isConfigured()) {
+      try {
+        events = await oddsApi.fetchOddsForSport(comp.oddsSportKey);
+      } catch {
+        events = null;
+      }
+    }
+
+    const enriched = matches.map((m) => ({
+      ...m,
+      odds: events ? oddsApi.findOddsForMatch(events, m.home_team, m.away_team) : null,
+    }));
+
+    res.json({ matches: enriched });
+  } catch (err) {
+    res.status(502).json({ matches: [], error: err.message });
+  }
+});
+
 router.get('/live/matches', authenticateOptional, async (req, res) => {
   const status = {
     scores: { configured: footballData.isConfigured(), source: 'football-data.org' },
