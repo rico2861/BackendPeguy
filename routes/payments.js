@@ -4,6 +4,7 @@ const nowpayments = require('../services/nowpayments');
 const { priceForPlan, PLANS } = require('../services/plans');
 const { reconcile } = require('../services/paymentService');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
+const mailer = require('../services/mailer');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
@@ -131,7 +132,15 @@ router.post('/nowpayments/notify', async (req, res) => {
           { status, actuallyPaid: actuallyPaid || null },
           { source: 'webhook', message: `Paiement réglé via webhook signé : ${status}`, raw: req.body }
         );
-        if (status === 'success') await User.setPlan(payment.userId, { type: payment.planType });
+        if (status === 'success') {
+          await User.setPlan(payment.userId, { type: payment.planType });
+          const user = await User.findById(payment.userId);
+          if (user) {
+            mailer
+              .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+              .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
+          }
+        }
       }
     }
   } catch (err) {

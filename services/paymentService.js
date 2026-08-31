@@ -4,6 +4,7 @@
 // if the customer is never redirected back to the app at all.
 const moncash = require('./moncash');
 const nowpayments = require('./nowpayments');
+const mailer = require('./mailer');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 
@@ -68,6 +69,12 @@ async function reconcile(payment, source = 'manual-check') {
   });
   if (status === 'success') {
     await User.setPlan(payment.userId, { type: payment.planType });
+    const user = await User.findById(payment.userId);
+    if (user) {
+      mailer
+        .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+        .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
+    }
   }
   return updated;
 }

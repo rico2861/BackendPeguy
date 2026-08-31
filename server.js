@@ -28,6 +28,7 @@ const predictionRoutes = require('./routes/predictions');
 const liveRoutes = require('./routes/live');
 const paymentRoutes = require('./routes/payments');
 const uploadRoutes = require('./routes/uploads');
+const pushRoutes = require('./routes/push');
 const { syncPredictionsWithLiveResults } = require('./services/predictionSync');
 const { sweepPendingPayments } = require('./services/paymentSync');
 
@@ -49,6 +50,7 @@ app.use('/api', predictionRoutes);
 app.use('/api', liveRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/uploads', uploadRoutes);
+app.use('/api/push', pushRoutes);
 
 app.use((req, res) => res.status(404).json({ error: 'Route introuvable.' }));
 // eslint-disable-next-line no-unused-vars

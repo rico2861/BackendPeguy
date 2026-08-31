@@ -1,16 +1,35 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const mailer = require('../services/mailer');
 const { authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-function signToken(user) {
+function signAccessToken(user) {
   return jwt.sign(
     { sub: user.id, role: user.role, email: user.email },
     process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    { expiresIn: process.env.JWT_EXPIRES_IN || '2h' }
   );
+}
+
+function signRefreshToken(user) {
+  return jwt.sign(
+    { sub: user.id, type: 'refresh' },
+    process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '30d' }
+  );
+}
+
+// Issues a fresh access+refresh pair and persists the refresh token's hash
+// (see User.setRefreshToken) — every login/refresh rotates it, so only the
+// most recently issued refresh token is ever valid.
+async function issueTokenPair(user) {
+  const token = signAccessToken(user);
+  const refreshToken = signRefreshToken(user);
+  await User.setRefreshToken(user.id, refreshToken);
+  return { token, refreshToken };
 }
 
 router.post('/register', async (req, res) => {
@@ -27,8 +46,9 @@ router.post('/register', async (req, res) => {
     // phone number is required so admins/tipsters can reach paying VIP
     // members (see GET /api/users).
     const user = await User.create({ name, email, phone, password, role: 'user' });
-    const token = signToken(user);
-    res.status(201).json({ token, user });
+    const { token, refreshToken } = await issueTokenPair(user);
+    mailer.sendWelcomeEmail(user).catch((err) => console.error('[mailer] welcome email failed:', err.message));
+    res.status(201).json({ token, refreshToken, user });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
   }
@@ -43,8 +63,35 @@ router.post('/login', async (req, res) => {
   if (!user || !User.verifyPassword(user, password)) {
     return res.status(401).json({ error: 'Email ou mot de passe incorrect.' });
   }
-  const token = signToken(user);
-  res.json({ token, user: User.toPublic(user) });
+  const { token, refreshToken } = await issueTokenPair(user);
+  res.json({ token, refreshToken, user: User.toPublic(user) });
+});
+
+// Exchanges a still-valid refresh token for a new access+refresh pair.
+// Rotation: presenting a refresh token that doesn't match the one on file
+// (already rotated away, or never issued) clears the stored token
+// entirely and rejects — the safest assumption is that it was stolen and
+// already used, so every device needs to log in again.
+router.post('/refresh', async (req, res) => {
+  const { refreshToken } = req.body || {};
+  if (!refreshToken) return res.status(400).json({ error: 'refreshToken requis.' });
+  try {
+    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+    const user = await User.findById(payload.sub);
+    if (!user || !User.verifyRefreshToken(user, refreshToken)) {
+      if (user) await User.clearRefreshToken(user.id);
+      return res.status(401).json({ error: 'Session expirée, reconnectez-vous.' });
+    }
+    const { token, refreshToken: nextRefreshToken } = await issueTokenPair(user);
+    res.json({ token, refreshToken: nextRefreshToken, user: User.toPublic(user) });
+  } catch {
+    return res.status(401).json({ error: 'Session expirée, reconnectez-vous.' });
+  }
+});
+
+router.post('/logout', authenticate, async (req, res) => {
+  await User.clearRefreshToken(req.user.id);
+  res.status(204).end();
 });
 
 router.get('/me', authenticate, (req, res) => {
@@ -69,6 +116,54 @@ router.post('/vip/activate-trial', authenticate, async (req, res) => {
 router.post('/vip/cancel', authenticate, async (req, res) => {
   const updated = await User.clearPlan(req.user.id);
   res.json({ user: updated });
+});
+
+// Always responds the same generic message whether or not the email
+// exists, to avoid leaking which emails have an account.
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body || {};
+  if (!email) return res.status(400).json({ error: 'Email requis.' });
+  const user = await User.findByEmail(email);
+  if (user) {
+    const resetToken = await User.setResetToken(user.id);
+    const appUrl = process.env.PUBLIC_APP_URL || 'http://localhost:5173';
+    const resetLink = `${appUrl}/reinitialiser-mot-de-passe?token=${resetToken}`;
+    mailer
+      .sendPasswordResetEmail(User.toPublic(user), resetLink)
+      .catch((err) => console.error('[mailer] reset email failed:', err.message));
+  }
+  res.json({ message: 'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.' });
+});
+
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password) return res.status(400).json({ error: 'Token et mot de passe sont requis.' });
+  if (password.length < 6) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+  const user = await User.findByResetToken(token);
+  if (!user) return res.status(400).json({ error: 'Lien invalide ou expiré.' });
+  await User.setPassword(user.id, password);
+  res.json({ message: 'Mot de passe mis à jour, reconnectez-vous.' });
+});
+
+// A one-time-secret ("PIN") escape hatch to create an admin account
+// without already having one — useful for the very first admin on a
+// fresh deploy, or as a break-glass path if every admin account is
+// locked out. Requires ADMIN_CREATE_PIN to be set; unset means disabled.
+router.post('/admin/bootstrap', async (req, res) => {
+  const pin = process.env.ADMIN_CREATE_PIN;
+  if (!pin) return res.status(503).json({ error: 'Création admin par PIN non configurée.' });
+  const { name, email, phone, password, pin: providedPin } = req.body || {};
+  if (providedPin !== pin) return res.status(403).json({ error: 'PIN invalide.' });
+  if (!name || !email || !phone || !password) {
+    return res.status(400).json({ error: 'Nom, email, téléphone et mot de passe sont requis.' });
+  }
+  try {
+    const user = await User.create({ name, email, phone, password, role: 'admin' });
+    const { token, refreshToken } = await issueTokenPair(user);
+    res.status(201).json({ token, refreshToken, user });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
+  }
 });
 
 module.exports = router;
