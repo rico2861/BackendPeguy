@@ -23,9 +23,14 @@ async function trySync() {
 router.get('/predictions', authenticateOptional, async (req, res) => {
   await trySync();
   const { date, dateFrom, league, country, market, q } = req.query;
-  const predictions = (await Prediction.listPredictions({ date, dateFrom, league, country, market, q })).map((p) =>
+  let predictions = (await Prediction.listPredictions({ date, dateFrom, league, country, market, q })).map((p) =>
     Prediction.withLockState(p, req.user)
   );
+  // A text search matches the real (pre-mask) team names in the DB, so a
+  // locked VIP pick showing up in results at all — even fully masked —
+  // tells a non-VIP visitor that pick exists for that team today. Search
+  // results drop locked picks entirely rather than leak that.
+  if (q) predictions = predictions.filter((p) => !p.locked);
   res.json({ predictions, count: predictions.length });
 });
 
