@@ -245,6 +245,10 @@ async function dailyTickets(date, viewer, dateFrom) {
     // on those legs get blurred client-side rather than the whole combo
     // being hidden.
     const locked = g.legs.some((leg) => isLocked(leg, viewer));
+    // If total_odd stayed the real product while individual locked legs
+    // are masked, anyone who knows the odds of the unlocked legs could
+    // divide it out and recover the locked leg's real odd — defeating the
+    // masking. Hide it the same way as the legs it's derived from.
     tickets.push({
       id: groupId,
       type: g.type,
@@ -252,7 +256,7 @@ async function dailyTickets(date, viewer, dateFrom) {
       result,
       locked,
       legs: g.legs.map((leg) => withLockState(leg, viewer)),
-      total_odd: Math.round(totalOdd * 100) / 100,
+      total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
     });
   }
   return tickets;
