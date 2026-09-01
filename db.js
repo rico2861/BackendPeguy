@@ -25,6 +25,7 @@ function ensureSchema() {
       CREATE TABLE IF NOT EXISTS audit_logs (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS admin_notifications (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS settings (key text PRIMARY KEY, data jsonb NOT NULL);
+      CREATE TABLE IF NOT EXISTS cross_platform_payments (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
     `);
   }
   return schemaReady;
@@ -96,6 +97,22 @@ async function writeSetting(key, value) {
   );
 }
 
+// Append-only log of payment events received FROM other platforms we
+// operate (currently just DealPam) — never mutated locally, read-only
+// display in the admin "Transactions croisées" page. Same shape as
+// audit_logs/admin_notifications above: single targeted INSERT, capped
+// DESC read.
+async function appendCrossPlatformPayment(entry) {
+  await ensureSchema();
+  await pool.query('INSERT INTO cross_platform_payments (id, data) VALUES ($1, $2::jsonb)', [entry.id, JSON.stringify(entry)]);
+}
+
+async function readCrossPlatformPayments({ limit = 500 } = {}) {
+  await ensureSchema();
+  const { rows } = await pool.query('SELECT data FROM cross_platform_payments ORDER BY created_at DESC LIMIT $1', [limit]);
+  return rows.map((r) => r.data);
+}
+
 module.exports = {
   ensureSchema,
   readSetting,
@@ -110,4 +127,6 @@ module.exports = {
   readAuditLogs,
   appendAdminNotification,
   readAdminNotifications,
+  appendCrossPlatformPayment,
+  readCrossPlatformPayments,
 };

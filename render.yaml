@@ -91,3 +91,11 @@ services:
       # comma-separated browser origins here if needed (custom domain...).
       - key: EXTRA_CORS_ORIGINS
         sync: false
+      # DealPam as the shared MonCash return page — see .env.example.
+      - key: DEALPAM_PAYMENT_CONFIRM_SECRET
+        sync: false
+      # Cross-platform payment sharing with DealPam — see .env.example.
+      - key: CROSS_PLATFORM_WEBHOOK_SECRET
+        sync: false
+      - key: CROSS_PLATFORM_DEALPAM_URL
+        sync: false

@@ -4,11 +4,12 @@ const nowpayments = require('../services/nowpayments');
 const bazik = require('../services/bazik');
 const { getPlans, priceForPlan, setPlanPrice } = require('../services/plans');
 const { reconcile, liveCheck } = require('../services/paymentService');
+const crossPlatform = require('../services/crossPlatform');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
 const mailer = require('../services/mailer');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, requireDealPamSignature } = require('../middleware/auth');
 const { recordAudit } = require('../middleware/audit');
 
 const router = express.Router();
@@ -178,6 +179,54 @@ router.post('/moncash/notify', async (req, res) => {
   res.status(200).json({ ok: true });
 });
 
+// DealPam's synchronous confirm-and-grant call: DealPam now serves as the
+// shared MonCash return page for this app (its own URL is registered as
+// the MonCash portal's "return URL" for our merchant account), so this is
+// what runs the instant the customer's browser lands there. Distinct from
+// crossPlatform.notifyDealPam below (fire-and-forget, read-only audit log,
+// PeguyTbn -> DealPam) — this is the opposite direction and DOES mutate
+// state: it reconciles + grants the plan exactly once (reconcile() is
+// idempotent — a payment already settled is a no-op), then reports back
+// what happened so DealPam's UI can show the right confirmation and send
+// the customer on to /mon-abonnement.
+router.post('/external/confirm', requireDealPamSignature, async (req, res) => {
+  try {
+    const { transactionId } = req.body || {};
+    if (!transactionId) return res.status(400).json({ error: 'transactionId requis.' });
+    if (!moncash.isConfigured()) return res.status(503).json({ error: 'MonCash non configuré.' });
+
+    const result = await moncash.retrieveByTransactionId(transactionId).catch(() => null);
+    if (!result?.found) return res.status(404).json({ status: 'failed', error: 'Transaction introuvable auprès de MonCash.' });
+
+    const orderId = result.payment?.reference;
+    let payment = orderId ? await Payment.findById(orderId) : null;
+    if (!payment || payment.provider !== 'moncash') {
+      return res.status(404).json({ status: 'failed', error: 'Paiement introuvable.' });
+    }
+
+    payment = await reconcile(payment, 'external-dealpam');
+    const user = await User.findById(payment.userId);
+    if (payment.status === 'success' && user) {
+      crossPlatform.notifyDealPam(payment, user).catch(() => {});
+    }
+
+    const status = payment.status === 'success' ? 'success' : payment.status === 'pending' ? 'pending' : 'failed';
+    res.json({
+      status,
+      appName: 'PeguyTBN',
+      planType: payment.planType,
+      amountHtg: payment.amountHtg,
+      amountUsd: payment.amountUsd,
+      customerName: user?.name || null,
+      redirectUrl: `${APP_BASE}/mon-abonnement`,
+      paymentId: payment.id,
+    });
+  } catch (err) {
+    console.error('[external confirm] error', err.message);
+    res.status(502).json({ status: 'failed', error: err.message || 'Erreur de vérification.' });
+  }
+});
+
 // Bazik's webhook — signature-verified (HMAC-SHA256 over
 // timestamp.eventId.rawBody, see services/bazik.js) before anything in the
 // body is trusted. Payment lookup is by referenceId, which we set to our
@@ -213,7 +262,7 @@ router.post('/bazik/notify', async (req, res) => {
         // handler below for why this matters).
         const fresh = await Payment.findById(payment.id);
         if (fresh && fresh.status === 'pending') {
-          await Payment.update(
+          const settled = await Payment.update(
             payment.id,
             { status, transactionId: transactionId || null },
             { source: 'webhook', message: `Paiement réglé via webhook Bazik signé : ${status}`, raw: body }
@@ -225,12 +274,15 @@ router.post('/bazik/notify', async (req, res) => {
               amountHtg: payment.amountHtg,
               provider: payment.provider,
             });
-            const user = await User.findById(payment.userId);
-            if (user) {
+          }
+          const settledUser = await User.findById(payment.userId);
+          if (settledUser) {
+            if (status === 'success') {
               mailer
-                .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+                .sendPaymentConfirmationEmail(User.toPublic(settledUser), payment)
                 .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
             }
+            crossPlatform.notifyDealPam(settled, settledUser).catch(() => {});
           }
         }
       }
@@ -272,7 +324,7 @@ router.post('/nowpayments/notify', async (req, res) => {
         // 'pending' *here* is allowed to grant the plan.
         const fresh = await Payment.findById(payment.id);
         if (fresh && fresh.status === 'pending') {
-          await Payment.update(
+          const settled = await Payment.update(
             payment.id,
             { status, actuallyPaid: actuallyPaid || null },
             { source: 'webhook', message: `Paiement réglé via webhook signé : ${status}`, raw: req.body }
@@ -284,12 +336,15 @@ router.post('/nowpayments/notify', async (req, res) => {
               amountHtg: payment.amountHtg,
               provider: payment.provider,
             });
-            const user = await User.findById(payment.userId);
-            if (user) {
+          }
+          const settledUser = await User.findById(payment.userId);
+          if (settledUser) {
+            if (status === 'success') {
               mailer
-                .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+                .sendPaymentConfirmationEmail(User.toPublic(settledUser), payment)
                 .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
             }
+            crossPlatform.notifyDealPam(settled, settledUser).catch(() => {});
           }
         }
       }

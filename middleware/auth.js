@@ -1,4 +1,5 @@
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const User = require('../models/User');
 
 async function authenticate(req, res, next) {
@@ -48,4 +49,24 @@ function authorize(...allowedRoles) {
   };
 }
 
-module.exports = { authenticate, authenticateOptional, authorize };
+// Guards server-to-server endpoints called by DealPam (which acts as the
+// shared MonCash return page for this app — see routes/payments.js POST
+// /external/confirm). Same HMAC-SHA256-over-raw-body + timing-safe-compare
+// pattern as the existing cross-platform/Bazik/NOWPayments webhooks — never
+// a JWT, since DealPam's backend has no PeguyTBN user session.
+function requireDealPamSignature(req, res, next) {
+  const secret = process.env.DEALPAM_PAYMENT_CONFIRM_SECRET;
+  const signature = req.headers['x-cross-signature'];
+  if (!secret || !signature || req.rawBody == null) {
+    return res.status(401).json({ error: 'Signature manquante ou service non configuré.' });
+  }
+  const expected = crypto.createHmac('sha256', secret).update(req.rawBody).digest('hex');
+  const a = Buffer.from(expected, 'hex');
+  const b = Buffer.from(String(signature), 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+    return res.status(401).json({ error: 'Signature invalide.' });
+  }
+  next();
+}
+
+module.exports = { authenticate, authenticateOptional, authorize, requireDealPamSignature };

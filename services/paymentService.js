@@ -5,6 +5,7 @@
 const moncash = require('./moncash');
 const nowpayments = require('./nowpayments');
 const mailer = require('./mailer');
+const crossPlatform = require('./crossPlatform');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 
@@ -90,12 +91,15 @@ async function reconcile(payment, source = 'manual-check') {
       amountHtg: payment.amountHtg,
       provider: payment.provider,
     });
-    const user = await User.findById(payment.userId);
-    if (user) {
+  }
+  const settledUser = await User.findById(payment.userId);
+  if (settledUser) {
+    if (status === 'success') {
       mailer
-        .sendPaymentConfirmationEmail(User.toPublic(user), payment)
+        .sendPaymentConfirmationEmail(User.toPublic(settledUser), payment)
         .catch((err) => console.error('[mailer] payment confirmation email failed:', err.message));
     }
+    crossPlatform.notifyDealPam(updated, settledUser).catch(() => {});
   }
   return updated;
 }
