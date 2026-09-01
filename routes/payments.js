@@ -21,7 +21,17 @@ router.get('/plans', (req, res) => {
 const API_BASE = process.env.PUBLIC_API_URL || 'http://localhost:5000/api';
 const APP_BASE = process.env.PUBLIC_APP_URL || 'http://localhost:5173';
 
-router.post('/moncash/create', authenticate, async (req, res) => {
+// Staff (moderator/admin) already have full VIP access via their role
+// (see User.computeIsVip) — blocking this server-side too, not just
+// hiding the buttons, so the rule holds even against a direct API call.
+function blockStaffPayment(req, res, next) {
+  if (req.user.role === 'moderator' || req.user.role === 'admin') {
+    return res.status(403).json({ error: "Votre rôle donne déjà un accès complet — aucun paiement n'est nécessaire." });
+  }
+  next();
+}
+
+router.post('/moncash/create', authenticate, blockStaffPayment, async (req, res) => {
   try {
     const { planType } = req.body;
     const price = priceForPlan(planType);
@@ -41,7 +51,7 @@ router.post('/moncash/create', authenticate, async (req, res) => {
   }
 });
 
-router.post('/bazik/create', authenticate, async (req, res) => {
+router.post('/bazik/create', authenticate, blockStaffPayment, async (req, res) => {
   try {
     const { planType } = req.body;
     const price = priceForPlan(planType);
@@ -70,7 +80,7 @@ router.post('/bazik/create', authenticate, async (req, res) => {
   }
 });
 
-router.post('/nowpayments/create', authenticate, async (req, res) => {
+router.post('/nowpayments/create', authenticate, blockStaffPayment, async (req, res) => {
   try {
     const { planType } = req.body;
     const price = priceForPlan(planType);
