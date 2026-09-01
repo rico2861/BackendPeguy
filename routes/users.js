@@ -18,6 +18,32 @@ router.get('/', authorize('admin', 'moderator'), async (req, res) => {
 
 router.use(authorize('admin'));
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Lets an admin create an account directly with a chosen role (member,
+// moderator, or admin) — self-registration (POST /auth/register) always
+// creates a plain 'user'; role escalation there is impossible by design.
+router.post('/', async (req, res) => {
+  const { name, email, phone, password, role } = req.body || {};
+  if (!name || !email || !phone || !password) {
+    return res.status(400).json({ error: 'Nom, email, téléphone et mot de passe sont requis.' });
+  }
+  if (!EMAIL_RE.test(email)) return res.status(400).json({ error: 'Adresse email invalide.' });
+  if (password.length < 6) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+  if (role && !User.ROLES.includes(role)) return res.status(400).json({ error: 'Rôle invalide.' });
+  try {
+    const user = await User.create({ name, email, phone, password, role: role || 'user' });
+    recordAudit(req, {
+      action: 'user.created_by_admin',
+      target: `user:${user.id} (${user.email})`,
+      newValue: { name: user.name, email: user.email, role: user.role },
+    });
+    res.status(201).json({ user });
+  } catch (err) {
+    res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });
+  }
+});
+
 router.patch('/:id/role', async (req, res) => {
   const { role } = req.body;
   if (req.params.id === req.user.id && role !== 'admin') {

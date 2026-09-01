@@ -260,7 +260,7 @@ router.post('/nowpayments/notify', async (req, res) => {
 // providers — this is the direct answer to "how do I know a customer
 // really paid": check here. Status reflects the provider's own records
 // (see reconcile above), not just what the browser reported.
-router.get('/', authenticate, authorize('admin'), async (req, res) => {
+router.get('/', authenticate, authorize('admin', 'moderator'), async (req, res) => {
   const users = new Map((await User.findAll()).map((u) => [u.id, u]));
   const payments = (await Payment.listAll()).map((p) => ({
     ...p,

@@ -32,6 +32,11 @@ router.get('/dashboard', async (req, res) => {
   let activeVip = 0;
   let expiredVip = 0;
   for (const u of users) {
+    // Staff (moderator/admin) always have full access via their role
+    // (see User.computeIsVip) regardless of any plan record — a
+    // pre-promotion payment left over on their account must never
+    // count as a "client actif" in business metrics.
+    if (u.role === 'moderator' || u.role === 'admin') continue;
     if (!u.plan?.expiresAt) continue;
     if (new Date(u.plan.expiresAt).getTime() > now) activeVip += 1;
     else expiredVip += 1;
