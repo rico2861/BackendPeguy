@@ -17,10 +17,20 @@ function logEvent(payment, { source, message, raw }) {
   return payment;
 }
 
+// "PGY_" prefix on every payment id — this is what we send as `orderId`/
+// `referenceId` to every gateway (MonCash/Bazik/NOWPayments), so it's what
+// comes back in webhooks/return redirects too. Since DealPam now shares
+// its own MonCash return page with this app (their MonCash portal return
+// URL can't be app-specific — see routes/payments.js POST /external/confirm),
+// they need to recognize at a glance that a reference belongs to PeguyTbn
+// rather than one of their own orders, without first trying (and failing)
+// a local lookup for every single unknown reference.
+const REFERENCE_PREFIX = 'PGY_';
+
 async function create({ userId, planType, amountUsd, amountHtg, provider }) {
   const payments = await readPayments();
   const payment = {
-    id: crypto.randomUUID(), // used as the provider-facing `orderId`
+    id: `${REFERENCE_PREFIX}${crypto.randomUUID()}`, // used as the provider-facing `orderId`
     userId,
     planType,
     amountUsd,
@@ -85,4 +95,4 @@ async function listForUser(userId) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-module.exports = { create, findById, findLatestForUser, update, listAll, listForUser };
+module.exports = { create, findById, findLatestForUser, update, listAll, listForUser, REFERENCE_PREFIX };
