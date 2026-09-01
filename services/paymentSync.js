@@ -13,8 +13,10 @@ const PENDING_MAX_AGE_MS = 48 * 60 * 60 * 1000; // stop polling ancient abandone
 // A payment link that's still unconfirmed after this long is treated as
 // abandoned — expired rather than left "pending" forever, which used to
 // read as "still in progress" indefinitely in the admin transactions list
-// even for a checkout the customer walked away from hours ago.
-const PENDING_EXPIRE_MS = 24 * 60 * 60 * 1000;
+// even for a checkout the customer walked away from hours ago. 3h is
+// generous for even a slow crypto confirmation while still giving a
+// reasonably prompt "this didn't go through" signal to admin and client.
+const PENDING_EXPIRE_MS = 3 * 60 * 60 * 1000;
 
 let lastRun = { at: 0, checked: 0, settled: 0, expired: 0, error: null };
 
