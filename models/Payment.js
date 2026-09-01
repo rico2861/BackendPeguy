@@ -25,7 +25,7 @@ async function create({ userId, planType, amountUsd, amountHtg, provider }) {
     planType,
     amountUsd,
     amountHtg: amountHtg ?? null,
-    status: 'pending', // pending | success | failed | partial
+    status: 'pending', // pending | success | failed | partial | expired
     transactionId: null, // MonCash transaction id
     reference: null, // MonCash reference
     invoiceId: null, // NOWPayments invoice id (set at creation)
