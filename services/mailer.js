@@ -1,36 +1,45 @@
-// Transactional emails. Deliberately reuses the DealPam SMTP account per
-// explicit instruction. Every send is best-effort: a caller never lets a
+// Transactional emails via Resend (HTTPS API, not SMTP). Direct SMTP to
+// Hostinger timed out systematically from Render — ports 465/587 are
+// blocked on Render's outbound IPs. Resend sends over HTTPS (443), which
+// is never blocked. Every send is best-effort: a caller never lets a
 // mail failure fail the request it's attached to (register, reset,
 // payment confirmation all still succeed even if the email doesn't go out
-// — see the try/catch at each call site).
-const nodemailer = require('nodemailer');
+// — see the try/catch at each call site, and the internal catch below).
+const { Resend } = require('resend');
 
-let transporter = null;
+let resend = null;
+
+// Two sending identities: "client" for user-facing mail (welcome, reset,
+// payment, VIP reminders — everything today), "admin" reserved for future
+// internal alerts. Both fall back to a sane default so a missing env var
+// degrades gracefully instead of crashing.
+const ACCOUNTS = {
+  client: () => process.env.MAIL_FROM_CLIENT || 'PeguyTbn <no-reply@peguytbn.com>',
+  admin: () => process.env.MAIL_FROM_ADMIN || 'PeguyTbn Équipe <no-reply@peguytbn.com>',
+};
 
 function isConfigured() {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
+  return !!process.env.RESEND_API_KEY;
 }
 
-function getTransporter() {
-  if (!transporter) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: Number(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    });
-  }
-  return transporter;
+function getClient() {
+  if (!resend) resend = new Resend(process.env.RESEND_API_KEY);
+  return resend;
 }
 
-async function sendMail({ to, subject, html }) {
+async function sendMail({ to, subject, html, as = 'client' }) {
   if (!isConfigured()) return;
-  await getTransporter().sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER,
-    to,
-    subject,
-    html,
-  });
+  try {
+    const { error } = await getClient().emails.send({
+      from: ACCOUNTS[as] ? ACCOUNTS[as]() : ACCOUNTS.client(),
+      to,
+      subject,
+      html,
+    });
+    if (error) throw new Error(error.message);
+  } catch (err) {
+    console.error(`[mailer] Resend send failed (to=${to}): ${err.message}`);
+  }
 }
 
 function escapeHtml(str) {
