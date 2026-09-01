@@ -152,7 +152,7 @@ function renderEmail({
                     </td>
                     <td style="padding-left:11px;text-align:left;">
                       <div style="color:#F1F4F9;font-weight:700;font-size:16px;letter-spacing:-0.01em;">PeguyTbn</div>
-                      <div style="color:#6B7386;font-size:9px;font-weight:700;letter-spacing:0.14em;">PREDICTIONS TERMINAL</div>
+                      <div style="color:#6B7386;font-size:9px;font-weight:700;letter-spacing:0.14em;">LIFE IS GOOD</div>
                     </td>
                   </tr>
                 </table>
