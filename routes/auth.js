@@ -224,11 +224,28 @@ router.get('/subscription', authenticate, async (req, res) => {
 
   const daysRemaining = status === 'active' ? Math.ceil((new Date(plan.expiresAt).getTime() - now) / 86_400_000) : 0;
 
+  // Client-facing payment history never includes the internal reference
+  // (`id`, sent as orderId/referenceId to gateways) or the gateway's own
+  // transaction/payment id (transactionId, providerPaymentId, invoiceId,
+  // providerOrderId, reference) — only admin sees those (GET /payments,
+  // /payments/lookup). The client gets `displayId`: a short id tied to
+  // the same record for support lookups, but not usable to correlate
+  // with MonCash/NOWPayments dashboards or guess other payments' ids.
+  const clientPayments = payments.map((p) => ({
+    displayId: p.displayId,
+    planType: p.planType,
+    amountUsd: p.amountUsd,
+    amountHtg: p.amountHtg,
+    status: p.status,
+    provider: p.provider,
+    createdAt: p.createdAt,
+  }));
+
   res.json({
     status,
     plan: plan ? { ...plan, daysRemaining } : null,
     planHistory: user.planHistory || [],
-    payments,
+    payments: clientPayments,
   });
 });
 

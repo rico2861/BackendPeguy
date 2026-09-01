@@ -27,10 +27,22 @@ function logEvent(payment, { source, message, raw }) {
 // a local lookup for every single unknown reference.
 const REFERENCE_PREFIX = 'PGY_';
 
+// Short, client-facing transaction id — shown to the customer instead of
+// the internal reference (`id`, sent as orderId/referenceId to gateways)
+// or the gateway's own transaction/payment id, neither of which the
+// client should see (see routes/auth.js GET /subscription, which strips
+// both before sending payment history to the client — only admin gets
+// the full picture, via GET /payments and /payments/lookup). Never sent
+// to any provider, purely a display/support-lookup convenience.
+function generateDisplayId() {
+  return `PT-${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
+}
+
 async function create({ userId, planType, amountUsd, amountHtg, provider }) {
   const payments = await readPayments();
   const payment = {
     id: `${REFERENCE_PREFIX}${crypto.randomUUID()}`, // used as the provider-facing `orderId`
+    displayId: generateDisplayId(),
     userId,
     planType,
     amountUsd,
