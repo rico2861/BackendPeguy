@@ -78,6 +78,7 @@ async function createPrediction(data, userId, userName) {
     odd: Number(data.odd),
     ticket_group: data.ticket_group || null,
     ticket_type: data.ticket_type || null,
+    ticket_title: data.ticket_title || null,
     featured: !!data.featured,
     is_vip: !!data.is_vip,
     // Settlement + enrichment — filled in automatically once a real or
@@ -229,7 +230,7 @@ async function dailyTickets(date, viewer, dateFrom) {
   const preds = (await listPredictions({ date, dateFrom })).filter((p) => p.ticket_group);
   const groups = new Map();
   for (const p of preds) {
-    if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, legs: [] });
+    if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, title: p.ticket_title, legs: [] });
     groups.get(p.ticket_group).legs.push(p);
   }
   const tickets = [];
@@ -252,6 +253,7 @@ async function dailyTickets(date, viewer, dateFrom) {
     tickets.push({
       id: groupId,
       type: g.type,
+      title: g.title,
       date,
       result,
       locked,

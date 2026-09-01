@@ -19,7 +19,10 @@ function canEdit(user, pred) {
 // (as of this phase) grade a ticket like this, so nothing else needs to
 // change to make a combo created here show up correctly everywhere.
 router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res) => {
-  const { type, legs, is_vip } = req.body || {};
+  const { title, legs, is_vip } = req.body || {};
+  if (!title || !title.trim()) {
+    return res.status(400).json({ error: 'Le titre du combiné est requis.' });
+  }
   if (!Array.isArray(legs) || legs.length < 2) {
     return res.status(400).json({ error: 'Un combiné doit contenir au moins 2 sélections.' });
   }
@@ -37,7 +40,7 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
   const createdLegs = [];
   for (const leg of legs) {
     const pred = await Prediction.createPrediction(
-      { ...leg, ticket_group: ticketGroup, ticket_type: type || 'Double', is_vip: !!is_vip },
+      { ...leg, ticket_group: ticketGroup, ticket_title: title.trim(), is_vip: !!is_vip },
       req.user.id,
       req.user.name
     );
@@ -48,12 +51,12 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
   recordAudit(req, {
     action: 'combo.created',
     target: `combo:${ticketGroup}`,
-    newValue: { type: type || 'Double', legs: createdLegs.length, total_odd: Math.round(totalOdd * 100) / 100 },
+    newValue: { title: title.trim(), legs: createdLegs.length, total_odd: Math.round(totalOdd * 100) / 100 },
   });
   res.status(201).json({
     ticket: {
       id: ticketGroup,
-      type: type || 'Double',
+      title: title.trim(),
       date: legs[0].match_date,
       locked: false,
       result: null,
@@ -76,7 +79,7 @@ router.delete('/:groupId', authenticate, authorize('moderator', 'admin'), async 
   recordAudit(req, {
     action: 'combo.deleted',
     target: `combo:${req.params.groupId}`,
-    previousValue: { type: legs[0].ticket_type, legs: legs.length },
+    previousValue: { title: legs[0].ticket_title, legs: legs.length },
   });
   res.status(204).end();
 });
