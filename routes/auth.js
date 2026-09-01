@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const Payment = require('../models/Payment');
 const mailer = require('../services/mailer');
+const { reconcile } = require('../services/paymentService');
 const { authenticate } = require('../middleware/auth');
 const { recordAudit } = require('../middleware/audit');
 
@@ -211,15 +212,33 @@ router.post('/vip/cancel', authenticate, async (req, res) => {
 // active plan wins even if an old payment happens to still say pending
 // (e.g. a since-superseded renewal attempt).
 router.get('/subscription', authenticate, async (req, res) => {
-  const user = req.user;
-  const plan = user.plan || null;
+  let user = req.user;
   const now = Date.now();
 
+  let payments = await Payment.listForUser(user.id);
+  // Opportunistic re-check: on Render's free tier the background sweep
+  // (services/paymentSync.js) only runs while the server happens to be
+  // awake — a payment left pending during a period nobody visited the
+  // site could otherwise sit unresolved indefinitely even long after the
+  // provider actually settled it. Every time the client loads their own
+  // subscription page, re-verify every one of their own still-pending
+  // payments against the provider right now, not just the most recent one.
+  const stillPending = payments.filter((p) => p.status === 'pending');
+  if (stillPending.length) {
+    await Promise.all(stillPending.map((p) => reconcile(p, 'client-visit').catch(() => null)));
+    payments = await Payment.listForUser(user.id);
+    // Re-fetch: a reconcile() above may have just granted the plan, and
+    // req.user is a snapshot from before that write — without this, a
+    // payment that settles successfully during this very request would
+    // still report status:'pending' back to the client that just paid.
+    const fresh = await User.findById(user.id);
+    if (fresh) user = User.toPublic(fresh);
+  }
+
+  const plan = user.plan || null;
   let status = 'none';
   if (plan && new Date(plan.expiresAt).getTime() > now) status = 'active';
   else if (plan) status = 'expired';
-
-  const payments = await Payment.listForUser(user.id);
   if (status === 'none' && payments.some((p) => p.status === 'pending')) status = 'pending';
 
   const daysRemaining = status === 'active' ? Math.ceil((new Date(plan.expiresAt).getTime() - now) / 86_400_000) : 0;

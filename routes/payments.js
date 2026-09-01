@@ -360,6 +360,15 @@ router.post('/nowpayments/notify', async (req, res) => {
 // really paid": check here. Status reflects the provider's own records
 // (see reconcile above), not just what the browser reported.
 router.get('/', authenticate, authorize('admin', 'moderator'), async (req, res) => {
+  // Opportunistic sweep: on Render's free tier the timer-driven sweep
+  // (services/paymentSync.js) only runs while the dyno happens to be
+  // awake, so a payment stuck pending during a quiet period could sit
+  // unresolved until someone visits. Nudge it here too (throttled to
+  // once/minute so refreshing this page repeatedly doesn't hammer every
+  // provider) — fire-and-forget, never delays this response.
+  if (Date.now() - getLastSyncStatus().at > 60_000) {
+    sweepPendingPayments().catch(() => {});
+  }
   const users = new Map((await User.findAll()).map((u) => [u.id, u]));
   const payments = (await Payment.listAll()).map((p) => ({
     ...p,

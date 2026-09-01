@@ -272,6 +272,14 @@ function sendPasswordResetEmail(user, resetLink) {
 function sendPaymentConfirmationEmail(user, payment) {
   const name = escapeHtml(user.name);
   const days = payment.planType === 'vip' ? '30' : '';
+  // Show what was actually charged in the currency actually used — MonCash
+  // and Bazik charge in HTG (gourdes), not the USD reference price. Using
+  // amountUsd unconditionally here used to show e.g. "5 $" on an email for
+  // a payment that was really made as "25 HTG" via MonCash.
+  const amountLabel =
+    payment.provider === 'moncash' || payment.provider === 'bazik'
+      ? `${payment.amountHtg} HTG`
+      : `${payment.amountUsd} $`;
   return sendMail({
     to: user.email,
     subject: 'Paiement confirmé — Bienvenue en Premium PeguyTbn',
@@ -282,7 +290,7 @@ function sendPaymentConfirmationEmail(user, payment) {
       heading: `Paiement confirmé 🎉`,
       bodyHtml: `<p style="margin:0;">Bonjour ${name}, ton paiement a été confirmé et ton accès <strong>Premium</strong> est actif. Tu as maintenant accès aux cotes en direct, aux value bets et aux pronostics VIP.</p>`,
       stats: [
-        { label: 'Montant', value: `${payment.amountUsd} $` },
+        { label: 'Montant', value: amountLabel },
         { label: 'Plan', value: 'Premium' },
         { label: 'Durée', value: days ? `${days} jours` : '—' },
       ],
