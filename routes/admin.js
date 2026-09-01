@@ -49,13 +49,17 @@ router.get('/dashboard', async (req, res) => {
   const winRate = completed ? Math.round((won / completed) * 100) : 0;
 
   const successPayments = payments.filter((p) => p.status === 'success');
-  const revenueByProvider = { moncash: { count: 0, htg: 0 }, nowpayments: { count: 0, usd: 0 } };
+  const revenueByProvider = {
+    moncash: { count: 0, htg: 0 },
+    bazik: { count: 0, htg: 0 },
+    nowpayments: { count: 0, usd: 0 },
+  };
   let revenueUsd = 0;
   let revenueHtg = 0;
   for (const p of successPayments) {
-    if (p.provider === 'moncash') {
-      revenueByProvider.moncash.count += 1;
-      revenueByProvider.moncash.htg += p.amountHtg || 0;
+    if (p.provider === 'moncash' || p.provider === 'bazik') {
+      revenueByProvider[p.provider].count += 1;
+      revenueByProvider[p.provider].htg += p.amountHtg || 0;
       revenueHtg += p.amountHtg || 0;
     } else if (p.provider === 'nowpayments') {
       revenueByProvider.nowpayments.count += 1;
