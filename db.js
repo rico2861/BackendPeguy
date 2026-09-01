@@ -24,6 +24,7 @@ function ensureSchema() {
       CREATE TABLE IF NOT EXISTS payments (id text PRIMARY KEY, data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS audit_logs (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS admin_notifications (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS settings (key text PRIMARY KEY, data jsonb NOT NULL);
     `);
   }
   return schemaReady;
@@ -78,8 +79,27 @@ async function readAdminNotifications({ limit = 30 } = {}) {
   return rows.map((r) => r.data);
 }
 
+// Generic key/value config store — currently only holds the editable VIP
+// plan prices (services/plans.js), but any single-row admin-editable
+// setting can reuse this instead of getting its own table.
+async function readSetting(key) {
+  await ensureSchema();
+  const { rows } = await pool.query('SELECT data FROM settings WHERE key = $1', [key]);
+  return rows[0]?.data ?? null;
+}
+
+async function writeSetting(key, value) {
+  await ensureSchema();
+  await pool.query(
+    'INSERT INTO settings (key, data) VALUES ($1, $2::jsonb) ON CONFLICT (key) DO UPDATE SET data = $2::jsonb',
+    [key, JSON.stringify(value)]
+  );
+}
+
 module.exports = {
   ensureSchema,
+  readSetting,
+  writeSetting,
   readUsers: () => readTable('users'),
   writeUsers: (data) => writeTable('users', data),
   readPredictions: () => readTable('predictions'),

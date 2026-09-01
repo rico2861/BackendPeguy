@@ -2,20 +2,43 @@ const express = require('express');
 const moncash = require('../services/moncash');
 const nowpayments = require('../services/nowpayments');
 const bazik = require('../services/bazik');
-const { priceForPlan, PLANS } = require('../services/plans');
+const { getPlans, priceForPlan, setPlanPrice } = require('../services/plans');
 const { reconcile } = require('../services/paymentService');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
 const mailer = require('../services/mailer');
 const Payment = require('../models/Payment');
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
+const { recordAudit } = require('../middleware/audit');
 
 const router = express.Router();
 
 // Public: powers the pricing page — one source of truth (services/plans.js)
 // instead of duplicating prices in the frontend.
-router.get('/plans', (req, res) => {
-  res.json({ plans: PLANS });
+router.get('/plans', async (req, res) => {
+  res.json({ plans: await getPlans() });
+});
+
+// Admin-only: change what a plan costs, in both currencies at once —
+// takes effect immediately (see services/plans.js), no redeploy needed.
+router.put('/plans/:type', authenticate, authorize('admin'), async (req, res) => {
+  const { usd, htg, days } = req.body || {};
+  if (usd === undefined && htg === undefined && days === undefined) {
+    return res.status(400).json({ error: 'Fournissez au moins un prix (usd, htg) ou une durée (days) à modifier.' });
+  }
+  if (usd !== undefined && !(Number(usd) >= 0)) return res.status(400).json({ error: 'Prix USD invalide.' });
+  if (htg !== undefined && !(Number(htg) >= 0)) return res.status(400).json({ error: 'Prix HTG invalide.' });
+  if (days !== undefined && !(Number(days) > 0)) return res.status(400).json({ error: 'Durée invalide.' });
+
+  const before = await getPlans();
+  const plans = await setPlanPrice(req.params.type, { usd, htg, days });
+  recordAudit(req, {
+    action: 'plan.price_changed',
+    target: `plan:${req.params.type}`,
+    previousValue: before[req.params.type] || null,
+    newValue: plans[req.params.type],
+  });
+  res.json({ plans });
 });
 
 const API_BASE = process.env.PUBLIC_API_URL || 'http://localhost:5000/api';
@@ -34,7 +57,7 @@ function blockStaffPayment(req, res, next) {
 router.post('/moncash/create', authenticate, blockStaffPayment, async (req, res) => {
   try {
     const { planType } = req.body;
-    const price = priceForPlan(planType);
+    const price = await priceForPlan(planType);
     if (!price) return res.status(400).json({ error: 'Plan invalide.' });
     if (!moncash.isConfigured()) {
       return res.status(503).json({
@@ -54,7 +77,7 @@ router.post('/moncash/create', authenticate, blockStaffPayment, async (req, res)
 router.post('/bazik/create', authenticate, blockStaffPayment, async (req, res) => {
   try {
     const { planType } = req.body;
-    const price = priceForPlan(planType);
+    const price = await priceForPlan(planType);
     if (!price) return res.status(400).json({ error: 'Plan invalide.' });
     if (!bazik.isConfigured()) {
       return res.status(503).json({
@@ -83,7 +106,7 @@ router.post('/bazik/create', authenticate, blockStaffPayment, async (req, res) =
 router.post('/nowpayments/create', authenticate, blockStaffPayment, async (req, res) => {
   try {
     const { planType } = req.body;
-    const price = priceForPlan(planType);
+    const price = await priceForPlan(planType);
     if (!price) return res.status(400).json({ error: 'Plan invalide.' });
     if (!nowpayments.isConfigured()) {
       return res.status(503).json({
