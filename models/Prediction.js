@@ -242,11 +242,13 @@ async function dailyTickets(date, viewer, dateFrom) {
   const tickets = [];
   for (const [groupId, g] of groups) {
     const totalOdd = g.legs.reduce((acc, leg) => acc * leg.odd, 1);
-    // A combo only ever wins if every leg does — one loss sinks the whole
-    // ticket, same as a real accumulator bet. Still pending if nothing has
-    // lost yet but at least one leg hasn't been graded.
+    // Explicit product choice (not the usual accumulator rule where one
+    // loss sinks the whole ticket): the coupon only shows PERDU once every
+    // single leg has lost, and GAGNÉ once every leg has won. Any other
+    // combination (including a mix of won/lost) stays "EN COURS" — each
+    // leg's own status is still visible individually (see LegStatus).
     let result = null;
-    if (g.legs.some((leg) => leg.result === 'lost')) result = 'lost';
+    if (g.legs.every((leg) => leg.result === 'lost')) result = 'lost';
     else if (g.legs.every((leg) => leg.result === 'won')) result = 'won';
     // A ticket is locked for this viewer if any leg is — team names/picks
     // on those legs get blurred client-side rather than the whole combo
