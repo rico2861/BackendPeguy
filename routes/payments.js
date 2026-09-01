@@ -74,7 +74,18 @@ router.post('/moncash/create', authenticate, blockStaffPayment, async (req, res)
   }
 });
 
+// Temporarily disabled: Bazik's production account is returning a broken
+// redirectUrl (points at an unrelated Supabase project instead of the
+// MonCash checkout page) — confirmed via a live createPayment call that
+// this isn't caused by anything in our request (we don't send a redirect
+// URL to Bazik at all, they own that entirely). Re-enable once Bazik
+// support confirms the production account is fixed.
+const BAZIK_TEMP_DISABLED = true;
+
 router.post('/bazik/create', authenticate, blockStaffPayment, async (req, res) => {
+  if (BAZIK_TEMP_DISABLED) {
+    return res.status(503).json({ error: 'Paiement MonCash (Bazik) temporairement indisponible — réessayez plus tard.' });
+  }
   try {
     const { planType } = req.body;
     const price = await priceForPlan(planType);
