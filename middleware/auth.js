@@ -11,6 +11,10 @@ async function authenticate(req, res, next) {
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Utilisateur introuvable.' });
+    // Enforced here too, not just at login/refresh — a still-valid access
+    // token (up to JWT_EXPIRES_IN) must lose access immediately once an
+    // admin blocks the account, not just on its next refresh.
+    if (user.blocked) return res.status(403).json({ error: 'Ce compte a été bloqué.' });
     req.user = User.toPublic(user);
     next();
   } catch {

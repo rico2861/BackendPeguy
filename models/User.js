@@ -84,6 +84,7 @@ async function create({ name, email, phone, password, role = 'user' }) {
     resetTokenHash: null,
     resetTokenExpiresAt: null,
     pushSubscriptions: [],
+    blocked: false,
     createdAt: new Date().toISOString(),
   };
   users.push(user);
@@ -155,6 +156,19 @@ async function clearPlan(id) {
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   users[idx].plan = null;
+  await writeUsers(users);
+  return toPublic(users[idx]);
+}
+
+// Blocking clears any refresh token too, so an already-logged-in device
+// loses access the moment its token is next refreshed, not just on the
+// next fresh login attempt.
+async function setBlocked(id, blocked) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1) return null;
+  users[idx].blocked = !!blocked;
+  if (blocked) users[idx].refreshTokenHash = null;
   await writeUsers(users);
   return toPublic(users[idx]);
 }
@@ -321,6 +335,7 @@ module.exports = {
   create,
   verifyPassword,
   updateRole,
+  setBlocked,
   setPlan,
   markReminderSent,
   clearPlan,

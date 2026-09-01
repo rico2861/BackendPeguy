@@ -1,5 +1,6 @@
 const express = require('express');
 const User = require('../models/User');
+const mailer = require('../services/mailer');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recordAudit } = require('../middleware/audit');
 
@@ -93,6 +94,45 @@ router.delete('/:id/plan', async (req, res) => {
     target: `user:${updated.id} (${updated.email})`,
     previousValue: before?.plan,
     newValue: null,
+  });
+  res.json({ user: updated });
+});
+
+// Sends the same logged-out reset-link email as /auth/forgot-password,
+// just triggered by an admin on the user's behalf instead of the user
+// typing their own email — the account never has to know its own current
+// password, and the token/expiry logic is shared with the self-service flow.
+router.post('/:id/send-reset-link', async (req, res) => {
+  const target = await User.findById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+  const resetToken = await User.setResetToken(target.id);
+  const appUrl = process.env.PUBLIC_APP_URL || 'http://localhost:5173';
+  const resetLink = `${appUrl}/reinitialiser-mot-de-passe?token=${resetToken}`;
+  try {
+    await mailer.sendPasswordResetEmail(User.toPublic(target), resetLink);
+  } catch (err) {
+    return res.status(502).json({ error: "Échec de l'envoi de l'email : " + err.message });
+  }
+  recordAudit(req, {
+    action: 'user.reset_link_sent',
+    target: `user:${target.id} (${target.email})`,
+  });
+  res.json({ message: `Lien de réinitialisation envoyé à ${target.email}.` });
+});
+
+router.patch('/:id/block', async (req, res) => {
+  if (req.params.id === req.user.id) {
+    return res.status(400).json({ error: 'Vous ne pouvez pas bloquer votre propre compte.' });
+  }
+  const { blocked } = req.body || {};
+  const before = await User.findById(req.params.id);
+  const updated = await User.setBlocked(req.params.id, !!blocked);
+  if (!updated) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+  recordAudit(req, {
+    action: blocked ? 'user.blocked' : 'user.unblocked',
+    target: `user:${updated.id} (${updated.email})`,
+    previousValue: !!before?.blocked,
+    newValue: !!blocked,
   });
   res.json({ user: updated });
 });

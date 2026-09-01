@@ -83,6 +83,9 @@ router.post('/login', async (req, res) => {
   if (!user || !User.verifyPassword(user, password)) {
     return res.status(401).json({ error: 'Identifiant ou mot de passe incorrect.' });
   }
+  if (user.blocked) {
+    return res.status(403).json({ error: 'Ce compte a été bloqué. Contactez le support.' });
+  }
   const { token, refreshToken } = await issueTokenPair(user);
   res.json({ token, refreshToken, user: User.toPublic(user) });
 });
@@ -101,6 +104,10 @@ router.post('/refresh', async (req, res) => {
     if (!user || !User.verifyRefreshToken(user, refreshToken)) {
       if (user) await User.clearRefreshToken(user.id);
       return res.status(401).json({ error: 'Session expirée, reconnectez-vous.' });
+    }
+    if (user.blocked) {
+      await User.clearRefreshToken(user.id);
+      return res.status(403).json({ error: 'Ce compte a été bloqué. Contactez le support.' });
     }
     const { token, refreshToken: nextRefreshToken } = await issueTokenPair(user);
     res.json({ token, refreshToken: nextRefreshToken, user: User.toPublic(user) });
