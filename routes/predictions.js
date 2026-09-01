@@ -23,10 +23,9 @@ async function trySync() {
 router.get('/predictions', authenticateOptional, async (req, res) => {
   await trySync();
   const { date, dateFrom, league, country, market, q } = req.query;
-  const predictions = (await Prediction.listPredictions({ date, dateFrom, league, country, market, q })).map((p) => ({
-    ...p,
-    locked: Prediction.isLocked(p, req.user),
-  }));
+  const predictions = (await Prediction.listPredictions({ date, dateFrom, league, country, market, q })).map((p) =>
+    Prediction.withLockState(p, req.user)
+  );
   res.json({ predictions, count: predictions.length });
 });
 
@@ -65,7 +64,7 @@ router.get('/predictions/:id', authenticateOptional, async (req, res) => {
   if (!pred) {
     return res.status(404).json({ error: 'Pronostic introuvable.' });
   }
-  res.json({ prediction: { ...pred, locked: Prediction.isLocked(pred, req.user) } });
+  res.json({ prediction: Prediction.withLockState(pred, req.user) });
 });
 
 router.get('/leagues', async (req, res) => {

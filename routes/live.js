@@ -112,10 +112,12 @@ router.get('/live/day', authenticateOptional, async (req, res) => {
     return res.status(502).json({ matches: [], error: err.message });
   }
 
-  const predictions = (await Prediction.listPredictions({ date })).map((p) => ({
-    ...p,
-    locked: Prediction.isLocked(p, req.user),
-  }));
+  // Matching against football-data.org's fixtures needs the real team
+  // names regardless of lock state (that's public fixture data, not our
+  // proprietary pick) — only the pick/market/odd/probability we publish
+  // on top of a real match get masked when locked.
+  const rawPredictions = await Prediction.listPredictions({ date });
+  const predictions = rawPredictions.map((p) => ({ ...Prediction.withLockState(p, req.user), home_team: p.home_team, away_team: p.away_team }));
 
   const matchedPredictionIds = new Set();
   const matches = realMatches.map((m) => {
@@ -136,6 +138,7 @@ router.get('/live/day', authenticateOptional, async (req, res) => {
       score_home: m.score_home,
       score_away: m.score_away,
       hasPick: !!pred,
+      locked: pred?.locked ?? false,
       market: pred?.market ?? null,
       pick: pred?.pick ?? null,
       odd: pred?.odd ?? null,
@@ -148,8 +151,9 @@ router.get('/live/day', authenticateOptional, async (req, res) => {
   // A published pick whose match isn't in football-data.org's fixture
   // list (uncovered competition, or a name that didn't fuzzy-match)
   // must still show up — never silently drop a real, visible pick.
-  for (const p of predictions) {
-    if (matchedPredictionIds.has(p.id)) continue;
+  for (const raw of rawPredictions) {
+    if (matchedPredictionIds.has(raw.id)) continue;
+    const p = Prediction.withLockState(raw, req.user);
     matches.push({
       id: p.id,
       country: p.country,
@@ -163,6 +167,7 @@ router.get('/live/day', authenticateOptional, async (req, res) => {
       score_home: p.score_home ?? null,
       score_away: p.score_away ?? null,
       hasPick: true,
+      locked: p.locked,
       market: p.market,
       pick: p.pick,
       odd: p.odd,

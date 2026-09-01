@@ -198,6 +198,33 @@ function isLocked(pred, viewer) {
   return !(viewer.isVip || viewer.role === 'moderator' || viewer.role === 'admin');
 }
 
+// Real masking, not a frontend CSS trick: when locked, the actual team
+// names/market/pick/odd/probability never leave the server — only a
+// same-length placeholder does, so the blurred teaser still "looks"
+// right (roughly matching text width) without a network-tab peek ever
+// revealing the real match. Only called on a prediction already known
+// to be locked for this viewer.
+function maskFields(pred) {
+  const mask = (s) => '•'.repeat(Math.min(String(s ?? '').length || 6, 14));
+  return {
+    ...pred,
+    home_team: mask(pred.home_team),
+    away_team: mask(pred.away_team),
+    market: mask(pred.market),
+    pick: mask(pred.pick),
+    odd: null,
+    probability: null,
+  };
+}
+
+// Applies maskFields only when the prediction is actually locked for
+// this viewer — the single place every route should call through,
+// rather than each one re-deriving the locked check.
+function withLockState(pred, viewer) {
+  const locked = isLocked(pred, viewer);
+  return locked ? { ...maskFields(pred), locked } : { ...pred, locked };
+}
+
 async function dailyTickets(date, viewer, dateFrom) {
   const preds = (await listPredictions({ date, dateFrom })).filter((p) => p.ticket_group);
   const groups = new Map();
@@ -224,7 +251,7 @@ async function dailyTickets(date, viewer, dateFrom) {
       date,
       result,
       locked,
-      legs: g.legs.map((leg) => ({ ...leg, locked: isLocked(leg, viewer) })),
+      legs: g.legs.map((leg) => withLockState(leg, viewer)),
       total_odd: Math.round(totalOdd * 100) / 100,
     });
   }
@@ -240,6 +267,7 @@ module.exports = {
   deletePrediction,
   dailyTickets,
   isLocked,
+  withLockState,
   trySettle,
   settleAll,
   applyLiveFacts,
