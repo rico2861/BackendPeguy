@@ -3,7 +3,7 @@ const moncash = require('../services/moncash');
 const nowpayments = require('../services/nowpayments');
 const bazik = require('../services/bazik');
 const { getPlans, priceForPlan, setPlanPrice } = require('../services/plans');
-const { reconcile } = require('../services/paymentService');
+const { reconcile, liveCheck } = require('../services/paymentService');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
 const mailer = require('../services/mailer');
 const Payment = require('../models/Payment');
@@ -309,6 +309,40 @@ router.get('/', authenticate, authorize('admin', 'moderator'), async (req, res) 
 router.post('/sync-now', authenticate, authorize('admin'), async (req, res) => {
   const result = await sweepPendingPayments();
   res.json(result);
+});
+
+// Admin/moderator payment lookup: find a payment by ANY id an admin might
+// have on hand — our own reference, or whichever id the provider showed
+// the customer/admin (MonCash transactionId, Bazik providerOrderId,
+// NOWPayments providerPaymentId/invoiceId) — then live-check it against
+// the provider (see liveCheck in paymentService.js) so the answer is
+// "what does Bazik/NOWPayments/MonCash say right now", not just our last
+// cached status. Placed before GET /:id so "/lookup" isn't swallowed by
+// the :id param route.
+router.get('/lookup', authenticate, authorize('admin', 'moderator'), async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (!q) return res.status(400).json({ error: 'Paramètre q requis.' });
+  const needle = q.toLowerCase();
+  const all = await Payment.listAll();
+  const payment = all.find((p) =>
+    [p.id, p.transactionId, p.reference, p.invoiceId, p.providerPaymentId, p.providerOrderId]
+      .filter(Boolean)
+      .some((v) => String(v).toLowerCase() === needle)
+  );
+  if (!payment) return res.status(404).json({ error: 'Aucune transaction ne correspond à cet identifiant.' });
+
+  const user = await User.findById(payment.userId);
+  const live = await liveCheck(payment).catch((err) => ({ checked: false, reason: `Erreur : ${err.message}` }));
+
+  res.json({
+    payment: {
+      ...payment,
+      userName: user?.name || 'Compte supprimé',
+      userEmail: user?.email || null,
+      userPhone: user?.phone || null,
+    },
+    live,
+  });
 });
 
 // Full detail + audit trail for one payment — the actual "proof of

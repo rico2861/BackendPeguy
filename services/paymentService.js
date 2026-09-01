@@ -100,4 +100,116 @@ async function reconcile(payment, source = 'manual-check') {
   return updated;
 }
 
-module.exports = { reconcile };
+// Human-readable reason for a NOWPayments status, using whatever extra
+// detail the provider gave us (amount actually received vs. expected is
+// the most common one — an underpaid crypto transfer never completes).
+function nowPaymentsReason(paymentStatus, found) {
+  switch (paymentStatus) {
+    case 'finished':
+      return 'Paiement confirmé et crédité intégralement.';
+    case 'partially_paid':
+      return `Montant insuffisant reçu : ${found.actually_paid ?? '?'} ${found.pay_currency || ''} reçu sur ${found.pay_amount ?? '?'} attendu.`;
+    case 'expired':
+      return "La fenêtre de paiement a expiré avant réception des fonds (le client n'a pas envoyé les fonds à temps).";
+    case 'failed':
+      return "Le fournisseur a explicitement marqué la transaction comme échouée.";
+    case 'refunded':
+      return 'Les fonds reçus ont été remboursés au client.';
+    case 'waiting':
+      return "En attente que le client envoie les fonds.";
+    case 'confirming':
+      return 'Fonds envoyés, en attente de confirmations blockchain.';
+    case 'confirmed':
+      return 'Confirmations blockchain suffisantes, en attente de crédit final.';
+    case 'sending':
+      return 'Conversion/versement en cours côté NOWPayments.';
+    default:
+      return `Statut fournisseur : ${paymentStatus}.`;
+  }
+}
+
+// Read-only live check against the provider's own API — never mutates the
+// stored payment (unlike reconcile, which only re-checks 'pending'
+// payments and grants access on success). This is what powers the admin
+// "vérifier un paiement" lookup: get the provider's *current* truth for a
+// payment regardless of what status we last recorded, and a plain-language
+// reason when it's not a success. Distinct from reconcile() so a lookup on
+// an already-settled or already-expired payment can still ask the
+// provider "so what actually happened here?" instead of being a no-op.
+async function liveCheck(payment) {
+  if (!payment) return { checked: false, reason: 'Paiement introuvable.' };
+
+  if (payment.provider === 'moncash') {
+    if (!moncash.isConfigured()) {
+      return { checked: false, provider: 'moncash', reason: 'MonCash direct non configuré sur ce serveur.' };
+    }
+    const result = await moncash.retrieveByOrderId(payment.id).catch((err) => ({ error: err.message }));
+    if (result?.error) {
+      return { checked: false, provider: 'moncash', reason: `Erreur MonCash : ${result.error}` };
+    }
+    if (!result?.found) {
+      return {
+        checked: true,
+        provider: 'moncash',
+        status: null,
+        reason: "MonCash n'a aucune trace de cette transaction — le client n'a probablement jamais complété le paiement sur leur page.",
+        raw: null,
+      };
+    }
+    const status = statusFromMonCashMessage(result.payment?.message);
+    return {
+      checked: true,
+      provider: 'moncash',
+      status,
+      // MonCash's own `message` field IS the human-readable explanation —
+      // surfaced verbatim rather than re-worded, since it's already their
+      // authoritative account of what happened (insufficient funds,
+      // cancelled, etc.).
+      reason: result.payment?.message || `Statut fournisseur : ${status}.`,
+      raw: result.payment,
+    };
+  }
+
+  if (payment.provider === 'nowpayments') {
+    if (!nowpayments.isConfigured()) {
+      return { checked: false, provider: 'nowpayments', reason: 'NOWPayments non configuré sur ce serveur.' };
+    }
+    if (!payment.providerPaymentId) {
+      return {
+        checked: false,
+        provider: 'nowpayments',
+        reason:
+          "Aucun paiement crypto n'a été initié côté NOWPayments (le client n'a jamais reçu de callback IPN — probablement jamais ouvert la page de paiement ou choisi une crypto).",
+      };
+    }
+    const found = await nowpayments.getPaymentStatus(payment.providerPaymentId).catch((err) => ({ error: err.message }));
+    if (found?.error) {
+      return { checked: false, provider: 'nowpayments', reason: `Erreur NOWPayments : ${found.error}` };
+    }
+    const status = nowpayments.statusFromNowPayments(found.payment_status);
+    return {
+      checked: true,
+      provider: 'nowpayments',
+      status,
+      reason: nowPaymentsReason(found.payment_status, found),
+      raw: found,
+    };
+  }
+
+  if (payment.provider === 'bazik') {
+    // No documented status-lookup endpoint on Bazik's public API — only
+    // creation + webhooks exist, so there is nothing to actively poll
+    // here (see the same limitation noted in reconcile() above). Honest
+    // about the limitation rather than pretending to check.
+    return {
+      checked: false,
+      provider: 'bazik',
+      reason:
+        "Bazik ne fournit pas d'API de vérification à la demande — le statut affiché reflète le dernier webhook reçu (voir l'historique ci-dessous), pas une vérification en direct.",
+    };
+  }
+
+  return { checked: false, reason: 'Fournisseur inconnu.' };
+}
+
+module.exports = { reconcile, liveCheck };
