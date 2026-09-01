@@ -93,6 +93,8 @@ router.post('/predictions', authenticate, authorize('moderator', 'admin'), async
   if (missing.length) {
     return res.status(400).json({ error: `Champs manquants : ${missing.join(', ')}` });
   }
+  const statusErr = statusDateError(data.status, data.match_date);
+  if (statusErr) return res.status(400).json({ error: statusErr });
   const pred = await Prediction.createPrediction(data, req.user.id, data.created_by_name || req.user.email);
   recordAudit(req, {
     action: 'prediction.created',
@@ -107,12 +109,25 @@ function canEdit(user, pred) {
   return user.role === 'moderator' && pred.created_by === user.id;
 }
 
+// A match can't be "Terminé" before its own kickoff date — this is the
+// server-side half of the same check the form does, so a direct API call
+// can't produce a finished-looking pick dated in the future either.
+function statusDateError(status, matchDate) {
+  if (status === 'FT' && matchDate && matchDate > new Date().toISOString().slice(0, 10)) {
+    return "Le statut ne peut pas être « Terminé » (FT) pour un match dont la date est dans le futur.";
+  }
+  return null;
+}
+
 router.put('/predictions/:id', authenticate, authorize('moderator', 'admin'), async (req, res) => {
   const existing = await Prediction.getPrediction(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Pronostic introuvable.' });
   if (!canEdit(req.user, existing)) {
     return res.status(403).json({ error: 'Vous ne pouvez modifier que vos propres pronostics.' });
   }
+  const body = req.body || {};
+  const statusErr = statusDateError(body.status ?? existing.status, body.match_date ?? existing.match_date);
+  if (statusErr) return res.status(400).json({ error: statusErr });
   const updated = await Prediction.updatePrediction(req.params.id, req.body || {});
   recordAudit(req, {
     action: existing.result !== updated.result ? 'prediction.result_changed' : 'prediction.updated',
