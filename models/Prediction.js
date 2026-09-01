@@ -184,17 +184,18 @@ async function deletePrediction(id) {
   return changed;
 }
 
-// A prediction/leg marked is_vip is visible to everyone once it's
+// A prediction/leg marked is_vip is fully visible to everyone once it's
 // SETTLED (result known — a finished pick is proof of track record, no
-// edge left in hiding it) or to VIP/staff viewers at any time. Anyone
-// else never sees it at all — not even a locked teaser card — while
-// it's still pending. Binary: an item either appears in full, or is
-// excluded entirely from every list this model returns.
-function isVisible(pred, viewer) {
-  if (!pred.is_vip) return true;
-  if (pred.result) return true;
-  if (!viewer) return false;
-  return viewer.isVip || viewer.role === 'moderator' || viewer.role === 'admin';
+// edge left in hiding it) or to VIP/staff viewers at any time. A
+// non-VIP viewer still sees it while pending — team names and pick are
+// blurred client-side as a teaser (see PredictionRow/TicketCard) rather
+// than excluded outright, to entice sign-ups. Nothing is ever excluded
+// from a list any more; `locked` just tells the frontend to blur it.
+function isLocked(pred, viewer) {
+  if (!pred.is_vip) return false;
+  if (pred.result) return false;
+  if (!viewer) return true;
+  return !(viewer.isVip || viewer.role === 'moderator' || viewer.role === 'admin');
 }
 
 async function dailyTickets(date, viewer, dateFrom) {
@@ -206,11 +207,6 @@ async function dailyTickets(date, viewer, dateFrom) {
   }
   const tickets = [];
   for (const [groupId, g] of groups) {
-    // A ticket is all-or-nothing for a given viewer: if any leg is
-    // still a hidden pending VIP pick, the whole combo (and its
-    // total_odd) would be misleading if partially shown, so the entire
-    // ticket is excluded rather than shown with gaps.
-    if (!g.legs.every((leg) => isVisible(leg, viewer))) continue;
     const totalOdd = g.legs.reduce((acc, leg) => acc * leg.odd, 1);
     // A combo only ever wins if every leg does — one loss sinks the whole
     // ticket, same as a real accumulator bet. Still pending if nothing has
@@ -218,12 +214,17 @@ async function dailyTickets(date, viewer, dateFrom) {
     let result = null;
     if (g.legs.some((leg) => leg.result === 'lost')) result = 'lost';
     else if (g.legs.every((leg) => leg.result === 'won')) result = 'won';
+    // A ticket is locked for this viewer if any leg is — team names/picks
+    // on those legs get blurred client-side rather than the whole combo
+    // being hidden.
+    const locked = g.legs.some((leg) => isLocked(leg, viewer));
     tickets.push({
       id: groupId,
       type: g.type,
       date,
       result,
-      legs: g.legs,
+      locked,
+      legs: g.legs.map((leg) => ({ ...leg, locked: isLocked(leg, viewer) })),
       total_odd: Math.round(totalOdd * 100) / 100,
     });
   }
@@ -238,7 +239,7 @@ module.exports = {
   updatePrediction,
   deletePrediction,
   dailyTickets,
-  isVisible,
+  isLocked,
   trySettle,
   settleAll,
   applyLiveFacts,

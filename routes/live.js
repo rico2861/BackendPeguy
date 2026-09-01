@@ -112,9 +112,10 @@ router.get('/live/day', authenticateOptional, async (req, res) => {
     return res.status(502).json({ matches: [], error: err.message });
   }
 
-  const predictions = (await Prediction.listPredictions({ date })).filter((p) =>
-    Prediction.isVisible(p, req.user)
-  );
+  const predictions = (await Prediction.listPredictions({ date })).map((p) => ({
+    ...p,
+    locked: Prediction.isLocked(p, req.user),
+  }));
 
   const matchedPredictionIds = new Set();
   const matches = realMatches.map((m) => {
