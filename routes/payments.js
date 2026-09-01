@@ -377,6 +377,20 @@ router.post('/sync-now', authenticate, authorize('admin'), async (req, res) => {
   res.json(result);
 });
 
+// Admin/moderator: at-a-glance health of every payment gateway — is it
+// configured, which environment, and (for Bazik) whether it's manually
+// disabled — so "is MonCash actually reachable right now" doesn't require
+// digging through env vars or code comments.
+router.get('/gateways-status', authenticate, authorize('admin', 'moderator'), (req, res) => {
+  res.json({
+    gateways: {
+      moncash: { configured: moncash.isConfigured(), mode: moncash.mode },
+      bazik: { configured: bazik.isConfigured(), disabled: BAZIK_TEMP_DISABLED },
+      nowpayments: { configured: nowpayments.isConfigured(), mode: nowpayments.mode, ipnConfigured: nowpayments.isIpnConfigured() },
+    },
+  });
+});
+
 // Admin/moderator payment lookup: find a payment by ANY id an admin might
 // have on hand — our own reference, or whichever id the provider showed
 // the customer/admin (MonCash transactionId, Bazik providerOrderId,
