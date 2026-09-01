@@ -423,7 +423,7 @@ router.get('/lookup', authenticate, authorize('admin', 'moderator'), async (req,
   const needle = q.toLowerCase();
   const all = await Payment.listAll();
   const payment = all.find((p) =>
-    [p.id, p.transactionId, p.reference, p.invoiceId, p.providerPaymentId, p.providerOrderId]
+    [p.id, p.displayId, p.transactionId, p.reference, p.invoiceId, p.providerPaymentId, p.providerOrderId]
       .filter(Boolean)
       .some((v) => String(v).toLowerCase() === needle)
   );
