@@ -99,7 +99,7 @@ router.post('/refresh', async (req, res) => {
   const { refreshToken } = req.body || {};
   if (!refreshToken) return res.status(400).json({ error: 'refreshToken requis.' });
   try {
-    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET);
+    const payload = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(payload.sub);
     if (!user || !User.verifyRefreshToken(user, refreshToken)) {
       if (user) await User.clearRefreshToken(user.id);

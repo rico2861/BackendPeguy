@@ -30,11 +30,23 @@ function getClient() {
   return client;
 }
 
+// Extension is derived strictly from the (server-validated) mimetype, never
+// from the client-supplied filename — `originalName` could otherwise smuggle
+// path segments (e.g. "a.jpg/../../../dealpam/x") straight into the R2 key,
+// writing outside the `peguytbn/` namespace this bucket shares with DealPam.
+const EXT_BY_MIME = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+
 // `folder` groups uploads by purpose (e.g. 'avatars', 'logos', 'payments')
 // so they're easy to browse/clean up in the R2 dashboard.
 async function uploadImage({ buffer, mimetype, originalName, folder = 'misc' }) {
-  const ext = (originalName.split('.').pop() || 'bin').toLowerCase();
-  const key = `peguytbn/${folder}/${crypto.randomUUID()}.${ext}`;
+  const ext = EXT_BY_MIME[mimetype] || 'bin';
+  const safeFolder = String(folder).replace(/[^a-z0-9_-]/gi, '') || 'misc';
+  const key = `peguytbn/${safeFolder}/${crypto.randomUUID()}.${ext}`;
 
   await getClient().send(
     new PutObjectCommand({

@@ -8,7 +8,7 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: 'Authentification requise.' });
   }
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(payload.sub);
     if (!user) return res.status(401).json({ error: 'Utilisateur introuvable.' });
     // Enforced here too, not just at login/refresh — a still-valid access
@@ -29,7 +29,7 @@ async function authenticateOptional(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return next();
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
     const user = await User.findById(payload.sub);
     if (user) req.user = User.toPublic(user);
   } catch {

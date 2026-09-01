@@ -68,6 +68,16 @@ async function reconcile(payment, source = 'manual-check') {
     return payment;
   }
 
+  // Re-check right before granting — the same guard the webhook handlers
+  // below use — since the initial `payment.status !== 'pending'` check at
+  // the top of this function can be stale by the time the provider network
+  // call above resolves: the 2-minute sweep, a client's on-demand check,
+  // and a webhook can all be mid-flight on the same payment concurrently.
+  // Without this, each caller would append its own duplicate 'success'
+  // update, planHistory entry, and confirmation email.
+  const fresh = await Payment.findById(payment.id);
+  if (!fresh || fresh.status !== 'pending') return fresh || payment;
+
   const updated = await Payment.update(payment.id, { status, ...extra }, {
     source,
     message: `Statut vérifié auprès de ${payment.provider} : ${status}`,

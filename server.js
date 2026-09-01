@@ -93,7 +93,18 @@ const globalLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api', globalLimiter);
-app.use(['/api/auth/login', '/api/auth/register', '/api/auth/forgot-password', '/api/auth/admin/bootstrap'], authLimiter);
+app.use(
+  [
+    '/api/auth/login',
+    '/api/auth/register',
+    '/api/auth/forgot-password',
+    '/api/auth/admin/bootstrap',
+    '/api/auth/reset-password',
+    '/api/auth/settings/request-otp',
+    '/api/auth/settings/reset-password',
+  ],
+  authLimiter
+);
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'peguytbn-backend' }));
 app.use('/api/auth', authRoutes);
