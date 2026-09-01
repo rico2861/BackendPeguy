@@ -3,6 +3,8 @@ const footballData = require('../services/footballData');
 const oddsApi = require('../services/oddsApi');
 const sofascore = require('../services/sofascore');
 const COMPETITIONS = require('../services/competitions');
+const Prediction = require('../models/Prediction');
+const { teamsLooselyMatch } = require('../utils/normalizeTeam');
 const { authenticateOptional, authenticate, authorize } = require('../middleware/auth');
 
 const router = express.Router();
@@ -86,6 +88,90 @@ router.get('/live/search', authenticate, authorize('moderator', 'admin'), async 
   } catch (err) {
     res.status(502).json({ results: [], error: err.message });
   }
+});
+
+// Every real fixture on a given date across the 12 covered competitions
+// (not just the ones we've published a pick on), each optionally
+// carrying our own prediction when one exists and is visible to this
+// viewer — powers the Matchs page's "show all matches" upcoming/finished
+// views, which used to only ever show our own picks.
+router.get('/live/day', authenticateOptional, async (req, res) => {
+  const date = req.query.date || new Date().toISOString().slice(0, 10);
+
+  if (!footballData.isConfigured()) {
+    return res.json({
+      matches: [],
+      message: "Aucune donnée réelle disponible : ajoutez une clé FOOTBALL_DATA_API_KEY dans backend/.env.",
+    });
+  }
+
+  let realMatches;
+  try {
+    realMatches = await footballData.fetchMatchesForDate(date);
+  } catch (err) {
+    return res.status(502).json({ matches: [], error: err.message });
+  }
+
+  const predictions = (await Prediction.listPredictions({ date })).filter((p) =>
+    Prediction.isVisible(p, req.user)
+  );
+
+  const matchedPredictionIds = new Set();
+  const matches = realMatches.map((m) => {
+    const pred = predictions.find(
+      (p) => teamsLooselyMatch(p.home_team, m.home_team) && teamsLooselyMatch(p.away_team, m.away_team)
+    );
+    if (pred) matchedPredictionIds.add(pred.id);
+    return {
+      id: pred?.id || m.id,
+      country: m.country,
+      league: m.league,
+      flag: null,
+      home_team: m.home_team,
+      away_team: m.away_team,
+      match_date: m.match_date,
+      match_time: m.match_time,
+      status: m.status,
+      score_home: m.score_home,
+      score_away: m.score_away,
+      hasPick: !!pred,
+      market: pred?.market ?? null,
+      pick: pred?.pick ?? null,
+      odd: pred?.odd ?? null,
+      probability: pred?.probability ?? null,
+      result: pred?.result ?? null,
+      is_vip: pred?.is_vip ?? false,
+    };
+  });
+
+  // A published pick whose match isn't in football-data.org's fixture
+  // list (uncovered competition, or a name that didn't fuzzy-match)
+  // must still show up — never silently drop a real, visible pick.
+  for (const p of predictions) {
+    if (matchedPredictionIds.has(p.id)) continue;
+    matches.push({
+      id: p.id,
+      country: p.country,
+      league: p.league,
+      flag: p.flag || null,
+      home_team: p.home_team,
+      away_team: p.away_team,
+      match_date: p.match_date,
+      match_time: p.match_time,
+      status: p.status,
+      score_home: p.score_home ?? null,
+      score_away: p.score_away ?? null,
+      hasPick: true,
+      market: p.market,
+      pick: p.pick,
+      odd: p.odd,
+      probability: p.probability,
+      result: p.result ?? null,
+      is_vip: !!p.is_vip,
+    });
+  }
+
+  res.json({ matches });
 });
 
 router.get('/live/matches', authenticateOptional, async (req, res) => {

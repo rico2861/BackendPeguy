@@ -60,6 +60,16 @@ async function fetchTodayMatches() {
   return matches.filter((m) => m.match_date === todayStr);
 }
 
+// Same same-day-empty-range workaround as fetchTodayMatches, for an
+// arbitrary date — powers the Matchs page's "show every real fixture
+// that day" view (GET /live/day), not just the ones we've published a
+// pick on.
+async function fetchMatchesForDate(dateStr) {
+  const date = new Date(`${dateStr}T00:00:00Z`);
+  const matches = await fetchMatchesInRange(dateStr, isoDate(addDays(date, 1)));
+  return matches.filter((m) => m.match_date === dateStr);
+}
+
 // Today + the last `daysBack` days — used by the prediction auto-settle
 // sync so a match that finished yesterday still gets picked up today.
 async function fetchRecentMatches(daysBack = 2) {
@@ -107,4 +117,4 @@ function normalizeMatch(m) {
   };
 }
 
-module.exports = { isConfigured, fetchTodayMatches, fetchRecentMatches, fetchMatchesInRange };
+module.exports = { isConfigured, fetchTodayMatches, fetchMatchesForDate, fetchRecentMatches, fetchMatchesInRange };
