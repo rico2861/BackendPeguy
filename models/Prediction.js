@@ -230,8 +230,14 @@ async function dailyTickets(date, viewer, dateFrom) {
   const preds = (await listPredictions({ date, dateFrom })).filter((p) => p.ticket_group);
   const groups = new Map();
   for (const p of preds) {
-    if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, title: p.ticket_title, legs: [] });
-    groups.get(p.ticket_group).legs.push(p);
+    if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, title: null, legs: [] });
+    const g = groups.get(p.ticket_group);
+    // Take the title from whichever leg has one, not just whichever leg
+    // happens to be first in the array — legs are meant to share the same
+    // title, but if one was ever edited individually and left null, the
+    // group shouldn't fall back to "Combiné" just because of iteration order.
+    if (!g.title && p.ticket_title) g.title = p.ticket_title;
+    g.legs.push(p);
   }
   const tickets = [];
   for (const [groupId, g] of groups) {
