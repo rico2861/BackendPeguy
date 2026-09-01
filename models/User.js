@@ -152,10 +152,23 @@ async function markReminderSent(id, planStartedAt, threshold) {
   await writeUsers(users);
 }
 
-async function clearPlan(id) {
+// `reason`/`cancelledByName` are admin-only — recorded on the planHistory
+// entry (mutated in place: it's the SAME object reference pushed into
+// planHistory by setPlan, so this update lands there too) so an admin can
+// later see who cancelled a subscription and why, but routes/auth.js
+// strips both fields before sending planHistory to the client — the user
+// sees that a plan was cancelled, never the admin's stated reason.
+async function clearPlan(id, { reason, cancelledByName } = {}) {
   const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
+  const activePlan = users[idx].plan;
+  if (activePlan) {
+    activePlan.cancelled = true;
+    activePlan.cancelledAt = new Date().toISOString();
+    activePlan.cancelReason = reason || null;
+    activePlan.cancelledBy = cancelledByName || null;
+  }
   users[idx].plan = null;
   await writeUsers(users);
   return toPublic(users[idx]);

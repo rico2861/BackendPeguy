@@ -260,10 +260,26 @@ router.get('/subscription', authenticate, async (req, res) => {
     createdAt: p.createdAt,
   }));
 
+  // The client sees THAT a plan was cancelled (and when) so the history
+  // reads honestly instead of looking like it simply ran its course, but
+  // never the admin's stated reason or who cancelled it — those are
+  // admin/audit-log-only (see User.clearPlan, routes/users.js DELETE
+  // /:id/plan).
+  const clientPlanHistory = (user.planHistory || []).map((p) => ({
+    type: p.type,
+    startedAt: p.startedAt,
+    expiresAt: p.expiresAt,
+    amountUsd: p.amountUsd,
+    amountHtg: p.amountHtg,
+    provider: p.provider,
+    cancelled: !!p.cancelled,
+    cancelledAt: p.cancelledAt || null,
+  }));
+
   res.json({
     status,
     plan: plan ? { ...plan, daysRemaining } : null,
-    planHistory: user.planHistory || [],
+    planHistory: clientPlanHistory,
     payments: clientPayments,
   });
 });

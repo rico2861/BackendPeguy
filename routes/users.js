@@ -85,15 +85,21 @@ router.patch('/:id/plan', async (req, res) => {
   res.json({ user: updated });
 });
 
+// Cancelling a paying customer's VIP with immediate effect always requires
+// a stated reason — recorded on the planHistory entry itself (see
+// User.clearPlan) and in the audit log, never shown to the user (only
+// that their plan was cancelled, not why — see routes/auth.js).
 router.delete('/:id/plan', async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: "Un motif d'annulation est requis." });
   const before = await User.findById(req.params.id);
-  const updated = await User.clearPlan(req.params.id);
+  const updated = await User.clearPlan(req.params.id, { reason, cancelledByName: req.user.name });
   if (!updated) return res.status(404).json({ error: 'Utilisateur introuvable.' });
   recordAudit(req, {
     action: 'user.plan_revoked',
     target: `user:${updated.id} (${updated.email})`,
     previousValue: before?.plan,
-    newValue: null,
+    newValue: { reason },
   });
   res.json({ user: updated });
 });
