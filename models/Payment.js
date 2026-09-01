@@ -107,4 +107,20 @@ async function listForUser(userId) {
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-module.exports = { create, findById, findLatestForUser, update, listAll, listForUser, REFERENCE_PREFIX };
+// One-off migration for records created before displayId existed —
+// idempotent (only touches payments missing it), safe to call more than
+// once. See routes/payments.js POST /backfill-display-ids.
+async function backfillDisplayIds() {
+  const payments = await readPayments();
+  let updated = 0;
+  for (const p of payments) {
+    if (!p.displayId) {
+      p.displayId = generateDisplayId();
+      updated += 1;
+    }
+  }
+  if (updated > 0) await writePayments(payments);
+  return { updated, total: payments.length };
+}
+
+module.exports = { create, findById, findLatestForUser, update, listAll, listForUser, REFERENCE_PREFIX, backfillDisplayIds };

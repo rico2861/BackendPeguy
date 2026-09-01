@@ -379,6 +379,15 @@ router.get('/', authenticate, authorize('admin', 'moderator'), async (req, res) 
   res.json({ payments, lastSync: getLastSyncStatus() });
 });
 
+// Temporary one-off migration: assigns displayId to payments created
+// before that field existed (see models/Payment.js). Idempotent — safe to
+// call more than once, only touches records missing it. Remove this route
+// once run in production.
+router.post('/backfill-display-ids', authenticate, authorize('admin'), async (req, res) => {
+  const result = await Payment.backfillDisplayIds();
+  res.json(result);
+});
+
 // Manually kick the background sweep instead of waiting up to 2 minutes
 // — useful right after telling a customer "I just paid, check now".
 router.post('/sync-now', authenticate, authorize('admin'), async (req, res) => {
