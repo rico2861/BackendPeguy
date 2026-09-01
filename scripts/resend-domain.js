@@ -10,6 +10,17 @@
 //   node scripts/resend-domain.js list
 //   node scripts/resend-domain.js delete <domain_id>
 require('dotenv').config();
+
+// Same corporate-proxy TLS workaround as server.js (see comment there) —
+// needed here too since this script talks to api.resend.com directly.
+const fs = require('fs');
+const path = require('path');
+const { Agent, setGlobalDispatcher } = require('undici');
+const winCaBundle = path.join(__dirname, '..', 'windows-root-ca.pem');
+if (fs.existsSync(winCaBundle)) {
+  setGlobalDispatcher(new Agent({ connect: { ca: fs.readFileSync(winCaBundle, 'utf8') } }));
+}
+
 const { Resend } = require('resend');
 
 const DOMAIN_NAME = 'peguytbn.com';
