@@ -9,6 +9,13 @@ const { recordAudit } = require('../middleware/audit');
 const router = express.Router();
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// At least 8 characters, one lowercase, one uppercase, one digit — the
+// same rule enforced on every path that sets a password (register,
+// forgot/reset-password, settings reset), so the frontend's live
+// checklist can't drift out of sync with what the server actually accepts.
+const STRONG_PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+const WEAK_PASSWORD_MSG =
+  'Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre.';
 
 // Shared by /register and /admin/bootstrap — same required fields, same
 // shape of account being created.
@@ -16,7 +23,7 @@ function validateContact({ name, email, phone, password }) {
   if (!name || !email || !phone || !password) return 'Nom, email, téléphone et mot de passe sont requis.';
   if (name.length > 200 || email.length > 200 || phone.length > 50) return 'Un des champs dépasse la longueur autorisée.';
   if (!EMAIL_RE.test(email)) return 'Adresse email invalide.';
-  if (password.length < 6) return 'Le mot de passe doit contenir au moins 6 caractères.';
+  if (!STRONG_PASSWORD_RE.test(password)) return WEAK_PASSWORD_MSG;
   return null;
 }
 
@@ -146,7 +153,7 @@ router.post('/settings/request-otp', authenticate, async (req, res) => {
 router.post('/settings/reset-password', authenticate, async (req, res) => {
   const { otp, password } = req.body || {};
   if (!otp || !password) return res.status(400).json({ error: 'Code et mot de passe sont requis.' });
-  if (password.length < 6) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+  if (!STRONG_PASSWORD_RE.test(password)) return res.status(400).json({ error: WEAK_PASSWORD_MSG });
   const user = await User.findByResetToken(otp);
   if (!user || user.id !== req.user.id) return res.status(400).json({ error: 'Code invalide ou expiré.' });
   await User.setPassword(user.id, password);
@@ -219,7 +226,7 @@ router.post('/forgot-password', async (req, res) => {
 router.post('/reset-password', async (req, res) => {
   const { token, password } = req.body || {};
   if (!token || !password) return res.status(400).json({ error: 'Token et mot de passe sont requis.' });
-  if (password.length < 6) return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 6 caractères.' });
+  if (!STRONG_PASSWORD_RE.test(password)) return res.status(400).json({ error: WEAK_PASSWORD_MSG });
   const user = await User.findByResetToken(token);
   if (!user) return res.status(400).json({ error: 'Lien invalide ou expiré.' });
   await User.setPassword(user.id, password);
