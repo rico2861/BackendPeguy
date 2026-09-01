@@ -28,15 +28,16 @@ router.get('/dashboard', async (req, res) => {
   ]);
 
   // --- Overview -----------------------------------------------------
+  // Staff (moderator/admin) are never counted as "users"/"clients" in
+  // any business metric on this dashboard — they always have full access
+  // via their role (see User.computeIsVip), not because they're a client,
+  // so including them would inflate totalUsers/newUsers with accounts
+  // that were never a real subscriber.
+  const clientUsers = users.filter((u) => u.role !== 'moderator' && u.role !== 'admin');
   const now = Date.now();
   let activeVip = 0;
   let expiredVip = 0;
-  for (const u of users) {
-    // Staff (moderator/admin) always have full access via their role
-    // (see User.computeIsVip) regardless of any plan record — a
-    // pre-promotion payment left over on their account must never
-    // count as a "client actif" in business metrics.
-    if (u.role === 'moderator' || u.role === 'admin') continue;
+  for (const u of clientUsers) {
     if (!u.plan?.expiresAt) continue;
     if (new Date(u.plan.expiresAt).getTime() > now) activeVip += 1;
     else expiredVip += 1;
@@ -69,11 +70,11 @@ router.get('/dashboard', async (req, res) => {
   }
 
   // --- Today ----------------------------------------------------------
-  const newUsersToday = users.filter((u) => isToday(u.createdAt)).length;
+  const newUsersToday = clientUsers.filter((u) => isToday(u.createdAt)).length;
   let newSubscriptionsToday = 0;
   let revenueTodayUsd = 0;
   let revenueTodayHtg = 0;
-  for (const u of users) {
+  for (const u of clientUsers) {
     for (const plan of u.planHistory || []) {
       if (!isToday(plan.startedAt)) continue;
       newSubscriptionsToday += 1;
@@ -91,7 +92,7 @@ router.get('/dashboard', async (req, res) => {
 
   const revenueByDate = new Map();
   const subsByDate = new Map();
-  for (const u of users) {
+  for (const u of clientUsers) {
     for (const plan of u.planHistory || []) {
       const date = String(plan.startedAt).slice(0, 10);
       if (date < cutoffIso) continue;
@@ -108,7 +109,7 @@ router.get('/dashboard', async (req, res) => {
 
   res.json({
     overview: {
-      totalUsers: users.length,
+      totalUsers: clientUsers.length,
       activeVip,
       expiredVip,
       totalPredictions: predictions.length,

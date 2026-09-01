@@ -85,6 +85,7 @@ async function create({ name, email, phone, password, role = 'user' }) {
     resetTokenExpiresAt: null,
     pushSubscriptions: [],
     blocked: false,
+    mustChangePassword: false,
     createdAt: new Date().toISOString(),
   };
   users.push(user);
@@ -293,6 +294,37 @@ async function setPassword(id, password) {
   return toPublic(users[idx]);
 }
 
+// An admin setting a password directly (rather than emailing a reset
+// link) — flags the account so the very next login forces a change
+// before anything else is usable, so the temporary password an admin
+// typed/saw never stays the account's real password for long. Also
+// clears the refresh token: any device already logged in must re-auth,
+// same as every other password-changing path.
+async function setPasswordByAdmin(id, password) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1) return null;
+  users[idx].passwordHash = bcrypt.hashSync(password, 10);
+  users[idx].mustChangePassword = true;
+  users[idx].refreshTokenHash = null;
+  await writeUsers(users);
+  return toPublic(users[idx]);
+}
+
+// The forced-change itself, called by the user (already authenticated
+// with the temporary password) rather than an admin — takes effect in
+// the store immediately and clears the flag so it's only asked once.
+async function completeForcedPasswordChange(id, password) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1) return null;
+  users[idx].passwordHash = bcrypt.hashSync(password, 10);
+  users[idx].mustChangePassword = false;
+  users[idx].refreshTokenHash = null;
+  await writeUsers(users);
+  return toPublic(users[idx]);
+}
+
 // --- Web push subscriptions ----------------------------------------------
 async function addPushSubscription(id, subscription) {
   const users = await readUsers();
@@ -349,6 +381,8 @@ module.exports = {
   findByResetToken,
   updateProfile,
   setPassword,
+  setPasswordByAdmin,
+  completeForcedPasswordChange,
   addPushSubscription,
   removePushSubscription,
   listPushSubscribers,

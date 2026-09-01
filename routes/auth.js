@@ -167,6 +167,25 @@ router.post('/settings/reset-password', authenticate, async (req, res) => {
   res.json({ message: 'Mot de passe mis à jour.' });
 });
 
+// Called right after logging in with a password an admin set directly
+// (see POST /users/:id/set-password) — req.user.mustChangePassword gates
+// it so it can't be used as a general "change my password" shortcut.
+// Takes effect immediately: new hash written, flag cleared, and a fresh
+// token pair issued since the old refresh token was invalidated the
+// moment the admin set the temporary password.
+router.post('/force-change-password', authenticate, async (req, res) => {
+  if (!req.user.mustChangePassword) {
+    return res.status(400).json({ error: 'Aucun changement de mot de passe requis.' });
+  }
+  const { password } = req.body || {};
+  if (!STRONG_PASSWORD_RE.test(password || '')) {
+    return res.status(400).json({ error: WEAK_PASSWORD_MSG });
+  }
+  const updated = await User.completeForcedPasswordChange(req.user.id, password);
+  const { token, refreshToken } = await issueTokenPair(updated);
+  res.json({ token, refreshToken, user: updated });
+});
+
 router.post('/favorites/:predictionId', authenticate, async (req, res) => {
   const updated = await User.toggleFavorite(req.user.id, req.params.predictionId);
   res.json({ user: updated });

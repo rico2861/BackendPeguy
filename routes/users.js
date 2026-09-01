@@ -120,6 +120,28 @@ router.post('/:id/send-reset-link', async (req, res) => {
   res.json({ message: `Lien de réinitialisation envoyé à ${target.email}.` });
 });
 
+const STRONG_PASSWORD_RE = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+// Admin sets a password directly instead of emailing a reset link — the
+// account is flagged mustChangePassword so the temporary password never
+// becomes its real one; the very next login forces a change (see
+// POST /auth/force-change-password).
+router.post('/:id/set-password', async (req, res) => {
+  const { password } = req.body || {};
+  if (!STRONG_PASSWORD_RE.test(password || '')) {
+    return res.status(400).json({ error: 'Le mot de passe doit contenir au moins 8 caractères, une majuscule, une minuscule et un chiffre.' });
+  }
+  const target = await User.findById(req.params.id);
+  if (!target) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+  const updated = await User.setPasswordByAdmin(req.params.id, password);
+  recordAudit(req, {
+    action: 'user.password_set_by_admin',
+    target: `user:${updated.id} (${updated.email})`,
+    newValue: { mustChangePassword: true },
+  });
+  res.json({ user: updated });
+});
+
 router.patch('/:id/block', async (req, res) => {
   if (req.params.id === req.user.id) {
     return res.status(400).json({ error: 'Vous ne pouvez pas bloquer votre propre compte.' });
