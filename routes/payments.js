@@ -85,7 +85,7 @@ const BAZIK_TEMP_DISABLED = true;
 
 router.post('/bazik/create', authenticate, blockStaffPayment, async (req, res) => {
   if (BAZIK_TEMP_DISABLED) {
-    return res.status(503).json({ error: 'Paiement MonCash (Bazik) temporairement indisponible — réessayez plus tard.' });
+    return res.status(503).json({ error: 'Paiement MonCash temporairement indisponible — réessayez plus tard.' });
   }
   try {
     const { planType } = req.body;
