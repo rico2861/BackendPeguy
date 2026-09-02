@@ -102,10 +102,22 @@ router.get('/dashboard', async (req, res) => {
       subsByDate.set(date, (subsByDate.get(date) || 0) + 1);
     }
   }
-  const revenueDaily = Array.from(revenueByDate.values()).sort((a, b) => a.date.localeCompare(b.date));
-  const subscriptionsDaily = Array.from(subsByDate.entries())
-    .map(([date, count]) => ({ date, count }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+  // Zero-filled for every day in the window, not just days that had
+  // activity — a chart with one lonely bar floating with no timeline
+  // around it reads as broken/sparse; 30 days of mostly-zero bars with an
+  // occasional spike reads as an actual trend line, and is what a real
+  // "last 30 days" chart should show either way.
+  const allDates = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    allDates.push(d.toISOString().slice(0, 10));
+  }
+  const revenueDaily = allDates.map((date) => {
+    const existing = revenueByDate.get(date);
+    return existing || { date, usd: 0, htg: 0 };
+  });
+  const subscriptionsDaily = allDates.map((date) => ({ date, count: subsByDate.get(date) || 0 }));
 
   res.json({
     overview: {
