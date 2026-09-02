@@ -258,6 +258,11 @@ async function dailyTickets(date, viewer, dateFrom) {
     // are masked, anyone who knows the odds of the unlocked legs could
     // divide it out and recover the locked leg's real odd — defeating the
     // masking. Hide it the same way as the legs it's derived from.
+    // "Newest leg" rather than "oldest" — a combo can have legs added at
+    // different times (see ComboForm's add-leg flow), and what a returning
+    // visitor cares about is whether anything about this coupon changed
+    // recently, not just when the group was first created.
+    const createdAt = g.legs.reduce((max, leg) => (leg.created_at > max ? leg.created_at : max), g.legs[0]?.created_at || null);
     tickets.push({
       id: groupId,
       type: g.type,
@@ -267,6 +272,7 @@ async function dailyTickets(date, viewer, dateFrom) {
       locked,
       legs: g.legs.map((leg) => withLockState(leg, viewer)),
       total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
+      created_at: createdAt,
     });
   }
   return tickets;
