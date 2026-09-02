@@ -45,8 +45,13 @@ router.post('/', async (req, res) => {
   }
 });
 
+// A stated reason is required, same as revoking a VIP plan — changing
+// someone's role is high-impact (grants/removes moderator or admin
+// access) and should never be a silent, unexplained click in the audit log.
 router.patch('/:id/role', async (req, res) => {
   const { role } = req.body;
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Un motif est requis pour changer le rôle.' });
   if (req.params.id === req.user.id && role !== 'admin') {
     return res.status(400).json({ error: 'Vous ne pouvez pas retirer vos propres droits admin.' });
   }
@@ -58,7 +63,7 @@ router.patch('/:id/role', async (req, res) => {
       action: 'user.role_changed',
       target: `user:${updated.id} (${updated.email})`,
       previousValue: before?.role,
-      newValue: role,
+      newValue: { role, reason },
     });
     res.json({ user: updated });
   } catch (err) {
@@ -165,7 +170,12 @@ router.patch('/:id/block', async (req, res) => {
   res.json({ user: updated });
 });
 
+// A stated reason is required — same idea as revoking a VIP plan or
+// changing a role: a permanent, irreversible action always leaves an
+// accountable trail of why, in the audit log (admin-only).
 router.delete('/:id', async (req, res) => {
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ error: 'Un motif est requis pour supprimer un compte.' });
   if (req.params.id === req.user.id) {
     return res.status(400).json({ error: 'Vous ne pouvez pas supprimer votre propre compte.' });
   }
@@ -176,7 +186,7 @@ router.delete('/:id', async (req, res) => {
     action: 'user.deleted',
     target: `user:${req.params.id} (${before?.email || 'inconnu'})`,
     previousValue: before ? { name: before.name, email: before.email, role: before.role } : null,
-    newValue: null,
+    newValue: { reason },
   });
   res.status(204).end();
 });
