@@ -34,17 +34,35 @@ router.get('/predictions', authenticateOptional, async (req, res) => {
   res.json({ predictions, count: predictions.length });
 });
 
-// Global track record over the last N days — powers the performance chart
-// on the frontend. Must be declared before /predictions/:id so "stats"
+const STATS_ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const STATS_MAX_RANGE_DAYS = 730;
+
+// Accepts either `?days=N` (the quick filter chips: 7/30/90/180/365) or an
+// explicit `?from=YYYY-MM-DD&to=YYYY-MM-DD` (the custom range picker) —
+// `from`/`to` win when both are present and valid. Capped at 2 years
+// either way so a malformed/huge range can't force an absurd zero-filled
+// array.
+function resolveStatsRange(req, defaultDays = 30) {
+  const { from, to } = req.query;
+  if (from && to && STATS_ISO_DATE_RE.test(from) && STATS_ISO_DATE_RE.test(to) && from <= to) {
+    const spanDays = Math.round((new Date(`${to}T00:00:00Z`) - new Date(`${from}T00:00:00Z`)) / 86_400_000) + 1;
+    if (spanDays > 0 && spanDays <= STATS_MAX_RANGE_DAYS) return { fromIso: from, toIso: to };
+  }
+  const days = Math.min(Math.max(Number(req.query.days) || defaultDays, 1), STATS_MAX_RANGE_DAYS);
+  const toIso = new Date().toISOString().slice(0, 10);
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - (days - 1));
+  return { fromIso: fromDate.toISOString().slice(0, 10), toIso };
+}
+
+// Global track record over a date range — powers the performance chart on
+// the frontend. Must be declared before /predictions/:id so "stats"
 // doesn't get captured as an :id param.
 router.get('/predictions/stats', async (req, res) => {
-  const days = Math.min(Math.max(Number(req.query.days) || 30, 1), 90);
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - days);
-  const cutoffIso = cutoff.toISOString().slice(0, 10);
+  const { fromIso, toIso } = resolveStatsRange(req, 30);
 
   const settled = (await Prediction.listPredictions({})).filter(
-    (p) => p.result && p.match_date >= cutoffIso
+    (p) => p.result && p.match_date >= fromIso && p.match_date <= toIso
   );
 
   const byDate = new Map();
@@ -52,9 +70,18 @@ router.get('/predictions/stats', async (req, res) => {
     if (!byDate.has(p.match_date)) byDate.set(p.match_date, { date: p.match_date, won: 0, lost: 0 });
     byDate.get(p.match_date)[p.result === 'won' ? 'won' : 'lost'] += 1;
   }
-  const daily = Array.from(byDate.values())
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .map((d) => ({ ...d, total: d.won + d.lost, winRate: Math.round((d.won / (d.won + d.lost)) * 100) }));
+  // Zero-filled for every day in the range — days with no settled
+  // prediction get `winRate: null` (not 0) so the chart shows a genuine
+  // gap in the line instead of a misleading dip to the floor.
+  const dates = [];
+  for (const cur = new Date(`${fromIso}T00:00:00Z`), end = new Date(`${toIso}T00:00:00Z`); cur <= end; cur.setUTCDate(cur.getUTCDate() + 1)) {
+    dates.push(cur.toISOString().slice(0, 10));
+  }
+  const daily = dates.map((date) => {
+    const d = byDate.get(date);
+    if (!d) return { date, won: 0, lost: 0, total: 0, winRate: null };
+    return { ...d, total: d.won + d.lost, winRate: Math.round((d.won / (d.won + d.lost)) * 100) };
+  });
 
   const won = settled.filter((p) => p.result === 'won').length;
   const lost = settled.length - won;

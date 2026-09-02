@@ -17,6 +17,44 @@ function isToday(iso) {
   return typeof iso === 'string' && iso.slice(0, 10) === todayIso();
 }
 
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+// Charts accept either `?days=N` (7/30/90/180/365, the quick filter chips)
+// or an explicit `?from=YYYY-MM-DD&to=YYYY-MM-DD` (the custom range
+// picker) — `from`/`to` win when both are present and valid. Capped at 2
+// years either way so a malformed/huge range can't force building an
+// absurdly long zero-filled array.
+const MAX_RANGE_DAYS = 730;
+function resolveDateRange(req, defaultDays = 30) {
+  const { from, to } = req.query;
+  if (from && to && ISO_DATE_RE.test(from) && ISO_DATE_RE.test(to) && from <= to) {
+    const fromDate = new Date(`${from}T00:00:00Z`);
+    const toDate = new Date(`${to}T00:00:00Z`);
+    const spanDays = Math.round((toDate - fromDate) / 86_400_000) + 1;
+    if (spanDays > 0 && spanDays <= MAX_RANGE_DAYS) {
+      return { fromIso: from, toIso: to, days: spanDays };
+    }
+  }
+  const days = Math.min(Math.max(Number(req.query.days) || defaultDays, 1), MAX_RANGE_DAYS);
+  const toIso = todayIso();
+  const fromDate = new Date();
+  fromDate.setDate(fromDate.getDate() - (days - 1));
+  return { fromIso: fromDate.toISOString().slice(0, 10), toIso, days };
+}
+
+// Every calendar date from fromIso to toIso inclusive — the backbone every
+// zero-filled daily chart array is built against.
+function dateRangeArray(fromIso, toIso) {
+  const dates = [];
+  const cur = new Date(`${fromIso}T00:00:00Z`);
+  const end = new Date(`${toIso}T00:00:00Z`);
+  while (cur <= end) {
+    dates.push(cur.toISOString().slice(0, 10));
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return dates;
+}
+
 // Everything here is computed in memory from the existing stores
 // (User.findAll / Prediction.listPredictions / Payment.listAll) — same
 // approach as GET /predictions/stats, appropriate at this app's scale.
@@ -85,17 +123,15 @@ router.get('/dashboard', async (req, res) => {
   const predictionsPublishedToday = predictions.filter((p) => isToday(p.created_at)).length;
   const predictionsCompletedToday = predictions.filter((p) => isToday(p.settled_at)).length;
 
-  // --- 30-day charts ----------------------------------------------------
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 30);
-  const cutoffIso = cutoff.toISOString().slice(0, 10);
+  // --- Charts (period-filterable: ?days=N or ?from=&to=) ----------------
+  const { fromIso, toIso } = resolveDateRange(req, 30);
 
   const revenueByDate = new Map();
   const subsByDate = new Map();
   for (const u of clientUsers) {
     for (const plan of u.planHistory || []) {
       const date = String(plan.startedAt).slice(0, 10);
-      if (date < cutoffIso) continue;
+      if (date < fromIso || date > toIso) continue;
       if (!revenueByDate.has(date)) revenueByDate.set(date, { date, usd: 0, htg: 0 });
       if (plan.amountUsd) revenueByDate.get(date).usd += plan.amountUsd;
       if (plan.amountHtg) revenueByDate.get(date).htg += plan.amountHtg;
@@ -104,19 +140,10 @@ router.get('/dashboard', async (req, res) => {
   }
   // Zero-filled for every day in the window, not just days that had
   // activity — a chart with one lonely bar floating with no timeline
-  // around it reads as broken/sparse; 30 days of mostly-zero bars with an
-  // occasional spike reads as an actual trend line, and is what a real
-  // "last 30 days" chart should show either way.
-  const allDates = [];
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    allDates.push(d.toISOString().slice(0, 10));
-  }
-  const revenueDaily = allDates.map((date) => {
-    const existing = revenueByDate.get(date);
-    return existing || { date, usd: 0, htg: 0 };
-  });
+  // around it reads as broken/sparse; a full range of mostly-zero bars
+  // with an occasional spike reads as an actual trend line.
+  const allDates = dateRangeArray(fromIso, toIso);
+  const revenueDaily = allDates.map((date) => revenueByDate.get(date) || { date, usd: 0, htg: 0 });
   const subscriptionsDaily = allDates.map((date) => ({ date, count: subsByDate.get(date) || 0 }));
 
   res.json({
