@@ -2,6 +2,7 @@ const express = require('express');
 const webPush = require('../services/webPush');
 const User = require('../models/User');
 const AdminNotification = require('../models/AdminNotification');
+const MemberNotification = require('../models/MemberNotification');
 const { notifyPublish } = require('../services/notifyPublish');
 const { authenticate, authorize } = require('../middleware/auth');
 
@@ -43,6 +44,14 @@ router.post('/broadcast', authenticate, authorize('moderator', 'admin'), async (
 
 router.get('/admin/notifications', authenticate, authorize('moderator', 'admin'), async (req, res) => {
   res.json({ notifications: await AdminNotification.list({ limit: 30 }) });
+});
+
+// The regular member-facing bell (topbar) — "what have I been sent"
+// rather than the staff-only admin feed above. Requires a session (unlike
+// most read endpoints) since visibility depends on the viewer's VIP
+// status (see MemberNotification.list).
+router.get('/notifications', authenticate, async (req, res) => {
+  res.json({ notifications: await MemberNotification.list({ limit: 30, viewer: req.user }) });
 });
 
 module.exports = router;

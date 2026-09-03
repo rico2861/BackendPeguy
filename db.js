@@ -26,6 +26,7 @@ function ensureSchema() {
       CREATE TABLE IF NOT EXISTS admin_notifications (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
       CREATE TABLE IF NOT EXISTS settings (key text PRIMARY KEY, data jsonb NOT NULL);
       CREATE TABLE IF NOT EXISTS cross_platform_payments (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
+      CREATE TABLE IF NOT EXISTS member_notifications (id text PRIMARY KEY, data jsonb NOT NULL, created_at timestamptz NOT NULL DEFAULT now());
     `);
   }
   return schemaReady;
@@ -127,6 +128,21 @@ async function readCrossPlatformPayments({ limit = 500 } = {}) {
   return rows.map((r) => r.data);
 }
 
+// User-facing notification feed (e.g. "new VIP pick published") — same
+// shape/pattern as admin_notifications above, but readable by any member
+// (see models/MemberNotification.js for the audience filter), not just
+// staff.
+async function appendMemberNotification(entry) {
+  await ensureSchema();
+  await pool.query('INSERT INTO member_notifications (id, data) VALUES ($1, $2::jsonb)', [entry.id, JSON.stringify(entry)]);
+}
+
+async function readMemberNotifications({ limit = 50 } = {}) {
+  await ensureSchema();
+  const { rows } = await pool.query('SELECT data FROM member_notifications ORDER BY created_at DESC LIMIT $1', [limit]);
+  return rows.map((r) => r.data);
+}
+
 module.exports = {
   ensureSchema,
   readSetting,
@@ -141,6 +157,8 @@ module.exports = {
   readAuditLogs,
   appendAdminNotification,
   readAdminNotifications,
+  appendMemberNotification,
+  readMemberNotifications,
   appendCrossPlatformPayment,
   readCrossPlatformPayments,
 };
