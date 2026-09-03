@@ -35,18 +35,27 @@ async function sweepPendingPayments() {
       if (age >= PENDING_EXPIRE_MS) {
         // One last check before giving up, in case the provider confirms
         // right at the edge of the window — only expire if it's still
-        // genuinely pending after that.
-        const rechecked = await reconcile(payment, 'background-sweep').catch(() => payment);
+        // genuinely pending after that. A failure to even reach the
+        // provider (network blip, transient 5xx) is NOT the same as the
+        // provider saying "not confirmed yet" — expiring on a failed call
+        // could wrongly kill a near-miss payment right at the boundary, so
+        // that case is left untouched and retried on the next sweep instead.
+        let reconcileFailed = false;
+        const rechecked = await reconcile(payment, 'background-sweep').catch((err) => {
+          reconcileFailed = true;
+          console.warn('[payment sweep] reconcile call failed, deferring expiry', payment.id, err.message);
+          return payment;
+        });
+        checked += 1;
         if (rechecked.status !== 'pending') {
           settled += 1;
-        } else {
+        } else if (!reconcileFailed) {
           await Payment.update(payment.id, { status: 'expired' }, {
             source: 'background-sweep',
             message: `Paiement expiré : aucune confirmation reçue en ${Math.round(PENDING_EXPIRE_MS / 3_600_000)}h.`,
           });
           expired += 1;
         }
-        checked += 1;
         continue;
       }
 
