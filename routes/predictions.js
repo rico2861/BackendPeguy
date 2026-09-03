@@ -3,6 +3,7 @@ const Prediction = require('../models/Prediction');
 const { authenticateOptional, authenticate, authorize } = require('../middleware/auth');
 const { recordAudit } = require('../middleware/audit');
 const { syncPredictionsWithLiveResults } = require('../services/predictionSync');
+const { notifyPublish } = require('../services/notifyPublish');
 
 const router = express.Router();
 
@@ -128,6 +129,18 @@ router.post('/predictions', authenticate, authorize('moderator', 'admin'), async
     target: `prediction:${pred.id} (${pred.home_team} vs ${pred.away_team})`,
     newValue: { market: pred.market, pick: pred.pick, odd: pred.odd },
   });
+  // A VIP pick used to only reach subscribers if a moderator remembered to
+  // click "Notifier les abonnés" afterwards — publishing one now always
+  // fans out (push + VIP e-mail) on its own. Fire-and-forget: never delays
+  // or fails the publish itself if push/e-mail is slow or misconfigured.
+  if (pred.is_vip) {
+    notifyPublish({
+      title: 'Nouveau pronostic VIP PeguyTbn',
+      body: `${pred.home_team} vs ${pred.away_team} — nouveau pronostic VIP disponible.`,
+      url: '/pronostics-vip',
+      actorName: data.created_by_name || req.user.email,
+    }).catch(() => {});
+  }
   res.status(201).json({ prediction: pred });
 });
 

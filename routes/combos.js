@@ -3,6 +3,7 @@ const express = require('express');
 const Prediction = require('../models/Prediction');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recordAudit } = require('../middleware/audit');
+const { notifyPublish } = require('../services/notifyPublish');
 
 const router = express.Router();
 
@@ -53,6 +54,17 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
     target: `combo:${ticketGroup}`,
     newValue: { title: title.trim(), legs: createdLegs.length, total_odd: Math.round(totalOdd * 100) / 100 },
   });
+  // Same automatic fan-out as a VIP solo pick (see routes/predictions.js) —
+  // a VIP coupon reaches subscribers (push + VIP e-mail) the moment it's
+  // published, no manual "Notifier les abonnés" click required.
+  if (is_vip) {
+    notifyPublish({
+      title: 'Nouveau pronostic VIP PeguyTbn',
+      body: `"${title.trim()}" — nouveau coupon VIP disponible.`,
+      url: '/pronostics-vip',
+      actorName: req.user.name || req.user.email,
+    }).catch(() => {});
+  }
   res.status(201).json({
     ticket: {
       id: ticketGroup,
