@@ -123,7 +123,14 @@ async function updatePrediction(id, data) {
   // score/status re-opens the bet for auto (re-)grading instead of
   // keeping a stale result around.
   const forcingResult = 'result' in data;
-  const touchesGrading = !forcingResult && ['pick', 'market', 'score_home', 'score_away', 'status'].some((f) => f in data);
+  // Value comparison, not just field presence: the moderator edit form
+  // always submits the whole object (title, odd, is_vip...), so every
+  // save used to include pick/market/status/score even when untouched —
+  // which made `touchesGrading` true on every single edit and silently
+  // wiped a manually-forced result (reverting a settled leg back to
+  // "pending") each time anything else about it was edited.
+  const touchesGrading =
+    !forcingResult && ['pick', 'market', 'score_home', 'score_away', 'status'].some((f) => f in data && data[f] !== existing[f]);
   const merged = {
     ...existing,
     ...data,
