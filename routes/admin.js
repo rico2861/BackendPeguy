@@ -128,16 +128,39 @@ router.get('/dashboard', async (req, res) => {
 
   const revenueByDate = new Map();
   const subsByDate = new Map();
+  let periodRevenueUsd = 0;
+  let periodRevenueHtg = 0;
+  let periodNewSubscriptions = 0;
   for (const u of clientUsers) {
     for (const plan of u.planHistory || []) {
       const date = String(plan.startedAt).slice(0, 10);
       if (date < fromIso || date > toIso) continue;
       if (!revenueByDate.has(date)) revenueByDate.set(date, { date, usd: 0, htg: 0 });
-      if (plan.amountUsd) revenueByDate.get(date).usd += plan.amountUsd;
-      if (plan.amountHtg) revenueByDate.get(date).htg += plan.amountHtg;
+      if (plan.amountUsd) {
+        revenueByDate.get(date).usd += plan.amountUsd;
+        periodRevenueUsd += plan.amountUsd;
+      }
+      if (plan.amountHtg) {
+        revenueByDate.get(date).htg += plan.amountHtg;
+        periodRevenueHtg += plan.amountHtg;
+      }
       subsByDate.set(date, (subsByDate.get(date) || 0) + 1);
+      periodNewSubscriptions += 1;
     }
   }
+
+  // New-signups-per-day — same shape/purpose as revenueDaily/
+  // subscriptionsDaily below, gives the dashboard an actual growth trend
+  // instead of only ever showing "new today" as a single number.
+  const usersByDate = new Map();
+  let periodNewUsers = 0;
+  for (const u of clientUsers) {
+    const date = String(u.createdAt).slice(0, 10);
+    if (date < fromIso || date > toIso) continue;
+    usersByDate.set(date, (usersByDate.get(date) || 0) + 1);
+    periodNewUsers += 1;
+  }
+
   // Zero-filled for every day in the window, not just days that had
   // activity — a chart with one lonely bar floating with no timeline
   // around it reads as broken/sparse; a full range of mostly-zero bars
@@ -145,6 +168,7 @@ router.get('/dashboard', async (req, res) => {
   const allDates = dateRangeArray(fromIso, toIso);
   const revenueDaily = allDates.map((date) => revenueByDate.get(date) || { date, usd: 0, htg: 0 });
   const subscriptionsDaily = allDates.map((date) => ({ date, count: subsByDate.get(date) || 0 }));
+  const usersDaily = allDates.map((date) => ({ date, count: usersByDate.get(date) || 0 }));
 
   res.json({
     overview: {
@@ -158,6 +182,14 @@ router.get('/dashboard', async (req, res) => {
       winRate,
       revenue: { usd: revenueUsd, htg: revenueHtg, byProvider: revenueByProvider },
     },
+    // Same window as the charts below (?days=N or ?from=&to=) — a
+    // dedicated section so the period filter visibly changes something
+    // above the fold too, not just the charts further down the page.
+    periodOverview: {
+      newUsers: periodNewUsers,
+      newSubscriptions: periodNewSubscriptions,
+      revenue: { usd: Math.round(periodRevenueUsd * 100) / 100, htg: periodRevenueHtg },
+    },
     today: {
       newUsers: newUsersToday,
       newSubscriptions: newSubscriptionsToday,
@@ -165,7 +197,7 @@ router.get('/dashboard', async (req, res) => {
       predictionsPublished: predictionsPublishedToday,
       predictionsCompleted: predictionsCompletedToday,
     },
-    charts: { revenueDaily, subscriptionsDaily },
+    charts: { revenueDaily, subscriptionsDaily, usersDaily },
   });
 });
 
