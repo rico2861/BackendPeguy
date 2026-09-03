@@ -97,6 +97,10 @@ async function createPrediction(data, userId, userName) {
     sofascore_event_id: data.sofascore_event_id ?? null,
     sofascore_home_team_id: data.sofascore_home_team_id ?? null,
     sofascore_away_team_id: data.sofascore_away_team_id ?? null,
+    // "the-fooball-api" (RapidAPI) match id, for the match-statistics card —
+    // this provider's own id space, unrelated to sofascore_event_id, and
+    // set by hand since this codebase has no lookup between the two.
+    external_match_id: data.external_match_id ?? null,
     created_by: userId,
     created_by_name: userName,
     created_at: ts,

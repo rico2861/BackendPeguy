@@ -92,4 +92,4 @@ async function fetchFixturesForLeagueRange(leagueId, days) {
   return perDay.flat();
 }
 
-module.exports = { isConfigured, listLeagues, fetchFixturesForLeagueRange };
+module.exports = { isConfigured, listLeagues, fetchFixturesForLeagueRange, fetchFixturesForDate };

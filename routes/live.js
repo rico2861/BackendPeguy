@@ -2,6 +2,7 @@ const express = require('express');
 const footballData = require('../services/footballData');
 const oddsApi = require('../services/oddsApi');
 const sofascore = require('../services/sofascore');
+const footballDetails = require('../services/footballDetails');
 const soccersApi = require('../services/soccersApi');
 const COMPETITIONS = require('../services/competitions');
 const Prediction = require('../models/Prediction');
@@ -142,7 +143,30 @@ router.get('/live/shotmap/:eventId/:teamId', authenticateOptional, async (req, r
   }
 });
 
+// Match statistics (possession, shots, cards, corners...) for a match
+// picked via `external_match_id` — "the-fooball-api" RapidAPI product,
+// separate id space from Sofascore. Same VIP gate as /live/shotmap.
+router.get('/live/match-details/:matchId', authenticateOptional, async (req, res) => {
+  const viewer = req.user;
+  const isVip = viewer?.isVip || viewer?.role === 'moderator' || viewer?.role === 'admin';
+  if (!isVip) return res.status(403).json({ error: 'Réservé aux membres VIP.', locked: true });
+
+  const { matchId } = req.params;
+
+  if (!footballDetails.isConfigured()) {
+    return res.json({ details: null, message: 'Statistiques indisponibles : ajoutez FOOTBALL_DETAILS_RAPIDAPI_KEY dans backend/.env.' });
+  }
+
+  try {
+    const details = await footballDetails.getMatchDetails(matchId);
+    res.json({ details });
+  } catch (err) {
+    res.status(502).json({ details: null, error: err.message });
+  }
+});
+
 // Every real fixture on a given date across the 12 covered competitions
+// PLUS, when configured, every league SoccersAPI exposes for this account
 // (not just the ones we've published a pick on), each optionally
 // carrying our own prediction when one exists and is visible to this
 // viewer — powers the Matchs page's "show all matches" upcoming/finished
@@ -150,18 +174,52 @@ router.get('/live/shotmap/:eventId/:teamId', authenticateOptional, async (req, r
 router.get('/live/day', authenticateOptional, async (req, res) => {
   const date = req.query.date || new Date().toISOString().slice(0, 10);
 
-  if (!footballData.isConfigured()) {
-    return res.json({
-      matches: [],
-      message: "Aucune donnée réelle disponible : ajoutez une clé FOOTBALL_DATA_API_KEY dans backend/.env.",
-    });
+  let realMatches = [];
+  if (footballData.isConfigured()) {
+    try {
+      realMatches = await footballData.fetchMatchesForDate(date);
+    } catch (err) {
+      return res.status(502).json({ matches: [], error: err.message });
+    }
   }
 
-  let realMatches;
-  try {
-    realMatches = await footballData.fetchMatchesForDate(date);
-  } catch (err) {
-    return res.status(502).json({ matches: [], error: err.message });
+  // SoccersAPI covers leagues football-data.org's free tier doesn't
+  // (Europa League, Conference League, Turkey, 2nd divisions...). Its
+  // league codes are coded "SA-<id>" (see services/soccersApi.js) and are
+  // a separate provider/id space from football-data.org's own competition
+  // codes, so there's no overlap to dedupe here. One network call per
+  // league, run concurrently, each independently guarded so a single
+  // league's failure never kills the rest of the response (mirrors the
+  // per-sport odds resilience in /live/matches above).
+  if (soccersApi.isConfigured()) {
+    try {
+      const leagues = await soccersApi.listLeagues();
+      const perLeague = await Promise.all(
+        leagues.map(async (l) => {
+          try {
+            return await soccersApi.fetchFixturesForDate(l.leagueId, date);
+          } catch {
+            return [];
+          }
+        })
+      );
+      const soccersApiMatches = perLeague.flat().map((m) => ({
+        ...m,
+        score_home: m.score_home ?? null,
+        score_away: m.score_away ?? null,
+      }));
+      realMatches = [...realMatches, ...soccersApiMatches];
+    } catch {
+      // listLeagues() itself failed — contribute nothing, football-data.org
+      // matches (if any) still go out below.
+    }
+  }
+
+  if (!footballData.isConfigured() && !soccersApi.isConfigured()) {
+    return res.json({
+      matches: [],
+      message: "Aucune donnée réelle disponible : ajoutez une clé FOOTBALL_DATA_API_KEY ou SOCCERSAPI_USER/SOCCERSAPI_TOKEN dans backend/.env.",
+    });
   }
 
   // Matching against football-data.org's fixtures needs the real team
