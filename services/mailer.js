@@ -154,14 +154,20 @@ function renderEmail({
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
                     <td style="width:38px;height:38px;">
-                      <!-- Same mark as src/components/LogoMark.jsx on the site: dark
-                           rounded square, gold "P", green rising-sparkline accent. -->
-                      <svg width="38" height="38" viewBox="0 0 40 40" role="img" aria-label="PeguyTbn">
-                        <rect x="0.5" y="0.5" width="39" height="39" rx="10" fill="#0E121B" stroke="#232A3B" />
-                        <text x="12.5" y="29" font-family="Georgia, 'Space Grotesk', serif" font-weight="700" font-size="23" fill="#F0B454">P</text>
-                        <polyline points="12,25 16.5,19.5 20.5,23 25.5,13.5 29.5,16" fill="none" stroke="#37D999" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />
-                        <circle cx="29.5" cy="16" r="2.1" fill="#37D999" />
-                      </svg>
+                      <!-- Real raster export of the exact same mark as
+                           src/components/LogoMark.jsx (dark rounded square,
+                           gold "P", green rising-sparkline accent) — same
+                           file already served publicly as the PWA icon.
+                           An <img> here renders reliably everywhere;
+                           inline SVG doesn't (Outlook desktop drops it
+                           entirely, among others). -->
+                      <img
+                        src="${process.env.PUBLIC_APP_URL || 'https://peguytbn.com'}/icon-192.png"
+                        width="38"
+                        height="38"
+                        alt="PeguyTbn"
+                        style="display:block;width:38px;height:38px;border-radius:10px;"
+                      />
                     </td>
                     <td style="padding-left:11px;text-align:left;">
                       <div style="color:#F1F4F9;font-weight:700;font-size:16px;letter-spacing:-0.01em;">PeguyTbn</div>
