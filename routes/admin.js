@@ -123,6 +123,29 @@ router.get('/dashboard', async (req, res) => {
   const predictionsPublishedToday = predictions.filter((p) => isToday(p.created_at)).length;
   const predictionsCompletedToday = predictions.filter((p) => isToday(p.settled_at)).length;
 
+  // Every payment attempt today (not just successful ones — a moderator
+  // watching this list wants to see a failed/pending MonCash attempt too,
+  // not just the ones that went through), newest first, with the payer's
+  // name/email attached since a bare userId is useless in an admin view.
+  const usersById = new Map(users.map((u) => [u.id, u]));
+  const todayTransactions = payments
+    .filter((p) => isToday(p.createdAt))
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .map((p) => {
+      const payer = usersById.get(p.userId);
+      return {
+        id: p.id,
+        at: p.createdAt,
+        status: p.status,
+        provider: p.provider,
+        planType: p.planType,
+        amountUsd: p.amountUsd,
+        amountHtg: p.amountHtg,
+        userName: payer?.name || null,
+        userEmail: payer?.email || null,
+      };
+    });
+
   // --- Charts (period-filterable: ?days=N or ?from=&to=) ----------------
   const { fromIso, toIso } = resolveDateRange(req, 30);
 
@@ -196,6 +219,7 @@ router.get('/dashboard', async (req, res) => {
       revenue: { usd: revenueTodayUsd, htg: revenueTodayHtg },
       predictionsPublished: predictionsPublishedToday,
       predictionsCompleted: predictionsCompletedToday,
+      transactions: todayTransactions,
     },
     charts: { revenueDaily, subscriptionsDaily, usersDaily },
   });
