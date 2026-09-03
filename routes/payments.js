@@ -171,7 +171,7 @@ router.post('/moncash/notify', async (req, res) => {
       await reconcile(payment, 'webhook');
     } else if (transactionId && moncash.isConfigured()) {
       const result = await moncash.retrieveByTransactionId(transactionId).catch(() => null);
-      if (result?.found) console.log('[moncash notify] unmatched transaction', result.payment);
+      if (result?.found) console.warn('[moncash notify] unmatched transaction', result.payment);
     }
   } catch (err) {
     console.error('[moncash notify] error', err.message);
@@ -287,7 +287,7 @@ router.post('/bazik/notify', async (req, res) => {
         }
       }
     } else if (!payment) {
-      console.log('[bazik notify] unmatched referenceId', referenceId);
+      console.warn('[bazik notify] unmatched referenceId', referenceId);
     }
   } catch (err) {
     console.error('[bazik notify] error', err.message);

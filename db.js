@@ -42,9 +42,23 @@ async function writeTable(table, data) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await client.query(`DELETE FROM ${table}`);
-    for (const item of data) {
-      await client.query(`INSERT INTO ${table} (id, data) VALUES ($1, $2::jsonb)`, [item.id, JSON.stringify(item)]);
+    if (data.length === 0) {
+      await client.query(`DELETE FROM ${table}`);
+    } else {
+      // Single bulk UPSERT (unnest) + one DELETE for rows no longer present,
+      // instead of DELETE-all followed by one sequential awaited INSERT per
+      // row — same read-modify-write-whole-array contract the models above
+      // rely on, but 2 round trips instead of N+1 and no window where the
+      // table sits empty mid-transaction.
+      const ids = data.map((item) => item.id);
+      const jsonData = data.map((item) => JSON.stringify(item));
+      await client.query(
+        `INSERT INTO ${table} (id, data)
+         SELECT * FROM UNNEST($1::text[], $2::jsonb[])
+         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data`,
+        [ids, jsonData]
+      );
+      await client.query(`DELETE FROM ${table} WHERE id <> ALL($1::text[])`, [ids]);
     }
     await client.query('COMMIT');
   } catch (err) {
