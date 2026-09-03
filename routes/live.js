@@ -9,34 +9,6 @@ const { authenticateOptional, authenticate, authorize } = require('../middleware
 
 const router = express.Router();
 
-// TEMPORARY — probing which endpoints sofascore-api6 (RapidAPI) actually
-// exposes beyond /search, to know whether a real "browse by league"
-// picker (Europa League, Conference League, 2nd divisions, Turkey...) is
-// buildable. Not linked from any UI. Remove after the investigation.
-router.get('/_probe-sofascore', authenticate, authorize('moderator', 'admin'), async (req, res) => {
-  const HOST = 'sofascore-api6.p.rapidapi.com';
-  const headers = { 'x-rapidapi-host': HOST, 'x-rapidapi-key': process.env.SOFASCORE_RAPIDAPI_KEY };
-  const candidates = [
-    '/search?query=europa',
-    '/tournaments',
-    '/categories',
-    '/rankings/tournaments',
-    '/tournament/list',
-    '/unique-tournaments',
-  ];
-  const results = [];
-  for (const path of candidates) {
-    try {
-      const r = await fetch(`https://${HOST}${path}`, { headers });
-      const text = await r.text();
-      results.push({ path, status: r.status, bodyPreview: text.slice(0, 500) });
-    } catch (err) {
-      results.push({ path, error: err.message });
-    }
-  }
-  res.json({ configured: !!process.env.SOFASCORE_RAPIDAPI_KEY, results });
-});
-
 const COMPETITION_BY_CODE = new Map(COMPETITIONS.map((c) => [c.code, c]));
 
 // Same masking principle as Prediction.maskForViewer: strip the field
