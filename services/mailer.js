@@ -153,8 +153,15 @@ function renderEmail({
               <td style="background:#0A0D13;background-image:radial-gradient(circle at 15% 15%, rgba(232,163,61,0.16), transparent 55%);border-radius:18px 18px 0 0;padding:32px 28px 56px;" align="center">
                 <table role="presentation" cellpadding="0" cellspacing="0">
                   <tr>
-                    <td style="width:38px;height:38px;border-radius:11px;background:linear-gradient(180deg,#F4C578,#E8A33D);text-align:center;vertical-align:middle;">
-                      <span style="color:#221503;font-weight:800;font-size:19px;font-family:Georgia,serif;line-height:38px;">P</span>
+                    <td style="width:38px;height:38px;">
+                      <!-- Same mark as src/components/LogoMark.jsx on the site: dark
+                           rounded square, gold "P", green rising-sparkline accent. -->
+                      <svg width="38" height="38" viewBox="0 0 40 40" role="img" aria-label="PeguyTbn">
+                        <rect x="0.5" y="0.5" width="39" height="39" rx="10" fill="#0E121B" stroke="#232A3B" />
+                        <text x="12.5" y="29" font-family="Georgia, 'Space Grotesk', serif" font-weight="700" font-size="23" fill="#F0B454">P</text>
+                        <polyline points="12,25 16.5,19.5 20.5,23 25.5,13.5 29.5,16" fill="none" stroke="#37D999" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" />
+                        <circle cx="29.5" cy="16" r="2.1" fill="#37D999" />
+                      </svg>
                     </td>
                     <td style="padding-left:11px;text-align:left;">
                       <div style="color:#F1F4F9;font-weight:700;font-size:16px;letter-spacing:-0.01em;">PeguyTbn</div>
@@ -250,11 +257,11 @@ function sendWelcomeEmail(user) {
       category: 'account',
       kicker: 'COMPTE',
       heading: `Bienvenue, ${name}`,
-      bodyHtml: `<p style="margin:0;">Ton compte PeguyTbn est créé. Tu as désormais accès à :</p>`,
+      bodyHtml: `<p style="margin:0;">Ton compte est prêt. Voici ce qui t'attend sur PeguyTbn :</p>`,
       highlights: [
-        { icon: '⚽', text: 'Les pronostics du jour, avec probabilité et cote détaillées' },
-        { icon: '🎟️', text: 'Les combinés « Prudent » et « Risqué » de nos pronostiqueurs' },
-        { icon: '📡', text: 'Le suivi des matchs en direct, minute par minute' },
+        { text: 'Pronostics du jour, avec probabilité et cote détaillées' },
+        { text: 'Combinés « Prudent » et « Risqué », sélectionnés par nos pronostiqueurs' },
+        { text: 'Suivi des matchs en direct, minute par minute' },
       ],
       ctaText: 'Voir les pronostics du jour',
       ctaUrl: url,
@@ -380,9 +387,13 @@ function sendOtpEmail(user, otp) {
   const name = escapeHtml(user.name);
   return sendMail({
     to: user.email,
-    subject: `${otp} — Code de réinitialisation PeguyTbn`,
+    // The code itself never goes in the subject — a subject line is often
+    // visible in a lock-screen/notification preview before the e-mail is
+    // even opened, which would hand a password-reset code to anyone who
+    // can see the recipient's phone.
+    subject: 'Code de réinitialisation PeguyTbn',
     html: renderEmail({
-      preheader: `Ton code: ${otp} (valable 10 minutes).`,
+      preheader: 'Ton code de réinitialisation est disponible dans cet e-mail (valable 10 minutes).',
       category: 'security',
       kicker: 'SÉCURITÉ',
       heading: 'Code de réinitialisation',
