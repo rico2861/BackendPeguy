@@ -120,6 +120,28 @@ router.get('/live/search', authenticate, authorize('moderator', 'admin'), async 
   }
 });
 
+// Per-team shot chart for a match picked via the Sofascore search — same
+// VIP tier as odds (maskOddsForViewer above), but here the whole payload
+// is VIP-only content so we gate the route itself rather than mask a field.
+router.get('/live/shotmap/:eventId/:teamId', authenticateOptional, async (req, res) => {
+  const viewer = req.user;
+  const isVip = viewer?.isVip || viewer?.role === 'moderator' || viewer?.role === 'admin';
+  if (!isVip) return res.status(403).json({ error: 'Réservé aux membres VIP.', locked: true });
+
+  const { eventId, teamId } = req.params;
+
+  if (!sofascore.isConfigured()) {
+    return res.json({ shots: [], message: 'Shotmap indisponible : ajoutez SOFASCORE_RAPIDAPI_KEY dans backend/.env.' });
+  }
+
+  try {
+    const shots = await sofascore.getShotmap(eventId, teamId);
+    res.json({ shots });
+  } catch (err) {
+    res.status(502).json({ shots: [], error: err.message });
+  }
+});
+
 // Every real fixture on a given date across the 12 covered competitions
 // (not just the ones we've published a pick on), each optionally
 // carrying our own prediction when one exists and is visible to this
