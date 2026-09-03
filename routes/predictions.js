@@ -9,20 +9,24 @@ const router = express.Router();
 
 const REQUIRED_FIELDS = ['home_team', 'away_team', 'match_date', 'match_time', 'market', 'pick', 'odd'];
 
-// Best-effort: keep predictions in sync with real results before serving
-// them. syncPredictionsWithLiveResults() self-throttles, so this is a
-// cheap no-op on every call except roughly once every 30s. Never blocks
-// the response on a failure (offline, key missing, network-blocked...).
-async function trySync() {
-  try {
-    await syncPredictionsWithLiveResults();
-  } catch {
+// Best-effort: nudge predictions back in sync with real results.
+// syncPredictionsWithLiveResults() self-throttles (30s) and a background
+// interval already calls it every 60s regardless of traffic (see
+// server.js) — this used to also be *awaited* here on every GET, which
+// meant every page load blocked on a live football-data.org round-trip
+// (or, worse, two concurrent requests — /predictions and /daily-bets, as
+// the "Paris du jour" page fires both at once — could each lose the
+// throttle race and both make that external call at the same time). Fired
+// without awaiting instead: still keeps things fresh on real traffic, but
+// never delays the response it's attached to.
+function trySync() {
+  syncPredictionsWithLiveResults().catch(() => {
     /* best-effort */
-  }
+  });
 }
 
 router.get('/predictions', authenticateOptional, async (req, res) => {
-  await trySync();
+  trySync();
   const { date, dateFrom, league, country, market, q } = req.query;
   let predictions = (await Prediction.listPredictions({ date, dateFrom, league, country, market, q })).map((p) =>
     Prediction.withLockState(p, req.user)
@@ -92,7 +96,7 @@ router.get('/predictions/stats', async (req, res) => {
 });
 
 router.get('/predictions/:id', authenticateOptional, async (req, res) => {
-  await trySync();
+  trySync();
   const pred = await Prediction.getPrediction(req.params.id);
   if (!pred) {
     return res.status(404).json({ error: 'Pronostic introuvable.' });
@@ -105,7 +109,7 @@ router.get('/leagues', async (req, res) => {
 });
 
 router.get('/daily-bets', authenticateOptional, async (req, res) => {
-  await trySync();
+  trySync();
   const { date, dateFrom } = req.query;
   const effectiveDate = date || (dateFrom ? undefined : new Date().toISOString().slice(0, 10));
   res.json({ date: effectiveDate || dateFrom, tickets: await Prediction.dailyTickets(effectiveDate, req.user, dateFrom) });
