@@ -56,14 +56,16 @@ async function issueTokenPair(user) {
 
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, phone, password } = req.body;
+    const { name, email, phone, password, lang } = req.body;
     const validationError = validateContact({ name, email, phone, password });
     if (validationError) return res.status(400).json({ error: validationError });
     // Public self-registration is always a plain 'user' — role upgrades
     // to moderator/admin can only be granted by an admin afterwards. The
     // phone number is required so admins/tipsters can reach paying VIP
-    // members (see GET /api/users).
-    const user = await User.create({ name, email, phone, password, role: 'user' });
+    // members (see GET /api/users). `lang` is whichever language the
+    // signup form was in — used later to send transactional emails (VIP
+    // pick notifications etc.) in the member's own language.
+    const user = await User.create({ name, email, phone, password, role: 'user', lang });
     const { token, refreshToken } = await issueTokenPair(user);
     mailer.sendWelcomeEmail(user).catch((err) => console.error('[mailer] welcome email failed:', err.message));
     res.status(201).json({ token, refreshToken, user });
@@ -126,10 +128,13 @@ router.get('/me', authenticate, (req, res) => {
   res.json({ user: req.user });
 });
 
-// Name/phone only — email is never editable here (it's the login
-// identifier and ties together payments/audit history).
+// Name/phone/lang only — email is never editable here (it's the login
+// identifier and ties together payments/audit history). `lang` is synced
+// silently by the frontend whenever the platform language switcher is
+// used (see FrontendPeguyTBN LocaleContext) — it's what transactional
+// emails (VIP pick notifications etc.) are sent in.
 router.put('/me', authenticate, async (req, res) => {
-  const { name, phone, username } = req.body || {};
+  const { name, phone, username, lang } = req.body || {};
   if (name !== undefined && (!name.trim() || name.length > 200)) {
     return res.status(400).json({ error: 'Nom invalide.' });
   }
@@ -140,7 +145,7 @@ router.put('/me', authenticate, async (req, res) => {
     return res.status(400).json({ error: 'Nom d’utilisateur invalide (lettres, chiffres, point ou underscore uniquement).' });
   }
   try {
-    const updated = await User.updateProfile(req.user.id, { name, phone, username });
+    const updated = await User.updateProfile(req.user.id, { name, phone, username, lang });
     res.json({ user: updated });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message || 'Erreur serveur.' });

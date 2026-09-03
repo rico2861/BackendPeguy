@@ -347,8 +347,30 @@ function sendOtpEmail(user, otp) {
   });
 }
 
+// `user.lang` is the platform language the member picked (see
+// FrontendPeguyTBN LocaleContext / PUT /auth/me) — defaults to French for
+// accounts created before that field existed. This is the only email
+// localized so far; every other transactional email is still French-only.
 function sendNewPicksEmail(user, { message } = {}) {
   const name = escapeHtml(user.name);
+  const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/pronostics-vip`;
+  if (user.lang === 'en') {
+    return sendMail({
+      to: user.email,
+      subject: 'New VIP picks available on PeguyTbn',
+      html: renderEmail({
+        preheader: 'New VIP picks were just published.',
+        category: 'payment',
+        kicker: 'VIP',
+        heading: `New picks are waiting for you, ${name}`,
+        bodyHtml: `<p style="margin:0 0 12px;">${
+          message ? escapeHtml(message) : 'Our tipsters just published new VIP picks — check them out before kickoff.'
+        }</p>`,
+        ctaText: 'View VIP picks',
+        ctaUrl: url,
+      }),
+    });
+  }
   return sendMail({
     to: user.email,
     subject: 'Nouveaux pronostics VIP disponibles sur PeguyTbn',
@@ -361,7 +383,7 @@ function sendNewPicksEmail(user, { message } = {}) {
         message ? escapeHtml(message) : "Nos pronostiqueurs viennent de publier de nouvelles sélections VIP — jette-y un œil avant le coup d'envoi."
       }</p>`,
       ctaText: 'Voir les pronostics VIP',
-      ctaUrl: `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/pronostics-vip`,
+      ctaUrl: url,
     }),
   });
 }

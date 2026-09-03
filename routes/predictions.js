@@ -139,6 +139,10 @@ router.post('/predictions', authenticate, authorize('moderator', 'admin'), async
       body: `${pred.home_team} vs ${pred.away_team} — nouveau pronostic VIP disponible.`,
       url: '/pronostics-vip',
       actorName: data.created_by_name || req.user.email,
+      emailMessage: {
+        fr: `${pred.home_team} vs ${pred.away_team} — nouveau pronostic VIP disponible.`,
+        en: `${pred.home_team} vs ${pred.away_team} — new VIP pick available.`,
+      },
     }).catch(() => {});
   }
   res.status(201).json({ prediction: pred });

@@ -10,7 +10,12 @@ const mailer = require('./mailer');
 const User = require('../models/User');
 const AdminNotification = require('../models/AdminNotification');
 
-async function notifyPublish({ title, body, url, actorName }) {
+// `emailMessage` may be a plain string (used verbatim for every
+// recipient — the manual "Notifier les abonnés" button, where a
+// moderator typed free text that can't be auto-translated) or an
+// `{ fr, en }` pair (the automatic VIP-publish trigger), in which case
+// each VIP gets the copy matching their own `user.lang`.
+async function notifyPublish({ title, body, url, actorName, emailMessage }) {
   let pushResult = { sent: 0 };
   try {
     pushResult = await webPush.broadcast({ title, body, url });
@@ -22,7 +27,13 @@ async function notifyPublish({ title, body, url, actorName }) {
   if (mailer.isConfigured()) {
     const users = await User.findAll();
     const vipUsers = users.filter((u) => User.computeIsVip(u));
-    const results = await Promise.allSettled(vipUsers.map((u) => mailer.sendNewPicksEmail(u, { message: body })));
+    const results = await Promise.allSettled(
+      vipUsers.map((u) => {
+        const message =
+          emailMessage && typeof emailMessage === 'object' ? (u.lang === 'en' ? emailMessage.en : emailMessage.fr) : emailMessage ?? body;
+        return mailer.sendNewPicksEmail(u, { message });
+      })
+    );
     vipEmailsSent = results.filter((r) => r.status === 'fulfilled').length;
   }
 

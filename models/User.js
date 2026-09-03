@@ -60,7 +60,7 @@ async function findByIdentifier(identifier) {
   );
 }
 
-async function create({ name, email, phone, password, role = 'user' }) {
+async function create({ name, email, phone, password, role = 'user', lang }) {
   const users = await readUsers();
   const normalizedEmail = String(email).trim().toLowerCase();
   if (users.some((u) => u.email === normalizedEmail)) {
@@ -77,6 +77,11 @@ async function create({ name, email, phone, password, role = 'user' }) {
     phone: phone ? String(phone).trim() : null,
     passwordHash: bcrypt.hashSync(password, 10),
     role,
+    // The platform language the member had selected at signup — used to
+    // pick FR/EN copy for transactional emails (see services/mailer.js).
+    // Defaults to French for anything unrecognized, matching the
+    // frontend's own fallback (see i18n/translations.js).
+    lang: lang === 'en' ? 'en' : 'fr',
     plan: null, // { type: 'trial'|'vip', startedAt, expiresAt, amountUsd, amountHtg, provider, remindersSent } | null
     planHistory: [], // every plan ever activated, oldest first
     favorites: [],
@@ -263,12 +268,13 @@ async function setResetOtp(id) {
   return otp;
 }
 
-async function updateProfile(id, { name, phone, username } = {}) {
+async function updateProfile(id, { name, phone, username, lang } = {}) {
   const users = await readUsers();
   const idx = users.findIndex((u) => u.id === id);
   if (idx === -1) return null;
   if (name !== undefined && name.trim()) users[idx].name = name.trim();
   if (phone !== undefined && phone.trim()) users[idx].phone = phone.trim();
+  if (lang === 'fr' || lang === 'en') users[idx].lang = lang;
   if (username !== undefined && username.trim()) {
     const normalized = username.trim().toLowerCase();
     const taken = users.some((u) => u.id !== id && u.username && u.username.toLowerCase() === normalized);

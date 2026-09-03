@@ -63,6 +63,10 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
       body: `"${title.trim()}" — nouveau coupon VIP disponible.`,
       url: '/pronostics-vip',
       actorName: req.user.name || req.user.email,
+      emailMessage: {
+        fr: `"${title.trim()}" — nouveau coupon VIP disponible.`,
+        en: `"${title.trim()}" — new VIP coupon available.`,
+      },
     }).catch(() => {});
   }
   res.status(201).json({
