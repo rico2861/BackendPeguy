@@ -27,7 +27,12 @@ function getClient() {
   return resend;
 }
 
-async function sendMail({ to, subject, html, as = 'client' }) {
+// `text` is the plain-text alternative — every email below now sends one
+// alongside the HTML. Spam filters (and DMARC/mailbox-provider reputation
+// scoring) weigh an HTML-only message more suspiciously than a proper
+// multipart message with a real text fallback; it also renders correctly
+// for the small number of clients that don't do HTML at all.
+async function sendMail({ to, subject, html, text, as = 'client' }) {
   if (!isConfigured()) return;
   try {
     const { error } = await getClient().emails.send({
@@ -35,6 +40,7 @@ async function sendMail({ to, subject, html, as = 'client' }) {
       to,
       subject,
       html,
+      text,
     });
     if (error) throw new Error(error.message);
   } catch (err) {
@@ -209,6 +215,10 @@ function renderEmail({
                     <td style="padding:0 10px;">
                       <a href="mailto:${process.env.MAIL_FROM_CLIENT ? String(process.env.MAIL_FROM_CLIENT).match(/<(.+)>/)?.[1] || 'support@peguytbn.com' : 'support@peguytbn.com'}" class="pg-link" style="color:#6B7386;font-size:11px;font-weight:600;text-decoration:none;">Support</a>
                     </td>
+                    <td style="color:#3A4256;font-size:11px;">•</td>
+                    <td style="padding:0 10px;">
+                      <a href="${process.env.PUBLIC_APP_URL || 'https://peguytbn.com'}/parametres" class="pg-link" style="color:#6B7386;font-size:11px;font-weight:600;text-decoration:none;">Préférences</a>
+                    </td>
                   </tr>
                 </table>
               </td>
@@ -216,6 +226,7 @@ function renderEmail({
             <tr>
               <td align="center" style="padding:8px 16px 36px;color:#9AA1B2;font-size:11px;line-height:1.7;">
                 ${footerNote ? `${escapeHtml(footerNote)}<br/>` : ''}
+                Cet e-mail t'a été envoyé car tu as un compte sur PeguyTbn (peguytbn.com).<br/>
                 PeguyTbn — Pronostics football, cotes et probabilités en temps réel.
               </td>
             </tr>
@@ -230,24 +241,37 @@ function renderEmail({
 
 function sendWelcomeEmail(user) {
   const name = escapeHtml(user.name);
+  const url = process.env.PUBLIC_APP_URL || 'http://localhost:5173';
   return sendMail({
     to: user.email,
-    subject: 'Bienvenue sur PeguyTbn',
+    subject: 'Bienvenue sur PeguyTbn — ton compte est prêt',
     html: renderEmail({
-      preheader: 'Ton compte PeguyTbn est prêt.',
+      preheader: 'Ton compte PeguyTbn est prêt — pronostics du jour, combinés et cotes en direct.',
       category: 'account',
       kicker: 'COMPTE',
-      heading: `Bienvenue, ${name} 👋`,
-      bodyHtml: `<p style="margin:0;">Ton compte PeguyTbn est créé. Retrouve chaque jour :</p>`,
+      heading: `Bienvenue, ${name}`,
+      bodyHtml: `<p style="margin:0;">Ton compte PeguyTbn est créé. Tu as désormais accès à :</p>`,
       highlights: [
-        { icon: '⚽', text: 'Les pronostics du jour avec probabilité et cote' },
+        { icon: '⚽', text: 'Les pronostics du jour, avec probabilité et cote détaillées' },
         { icon: '🎟️', text: 'Les combinés « Prudent » et « Risqué » de nos pronostiqueurs' },
-        { icon: '📡', text: 'Le monitoring des matchs en direct' },
+        { icon: '📡', text: 'Le suivi des matchs en direct, minute par minute' },
       ],
       ctaText: 'Voir les pronostics du jour',
-      ctaUrl: process.env.PUBLIC_APP_URL || 'http://localhost:5173',
+      ctaUrl: url,
       secondaryText: 'Bonne chance pour tes paris — et joue toujours de façon responsable.',
     }),
+    text: `Bienvenue sur PeguyTbn, ${user.name} !
+
+Ton compte est créé. Tu as désormais accès à :
+- Les pronostics du jour, avec probabilité et cote détaillées
+- Les combinés « Prudent » et « Risqué » de nos pronostiqueurs
+- Le suivi des matchs en direct, minute par minute
+
+Voir les pronostics du jour : ${url}
+
+Bonne chance pour tes paris — et joue toujours de façon responsable.
+
+— L'équipe PeguyTbn`,
   });
 }
 
@@ -264,8 +288,16 @@ function sendPasswordResetEmail(user, resetLink) {
       bodyHtml: `<p style="margin:0;">Bonjour ${name}, clique sur le bouton ci-dessous pour choisir un nouveau mot de passe. Ce lien est valable <strong>1 heure</strong>.</p>`,
       ctaText: 'Choisir un nouveau mot de passe',
       ctaUrl: resetLink,
-      secondaryText: "Si tu n'es pas à l'origine de cette demande, ignore simplement cet email — ton mot de passe actuel reste inchangé.",
+      secondaryText: "Si tu n'es pas à l'origine de cette demande, ignore simplement cet e-mail — ton mot de passe actuel reste inchangé.",
     }),
+    text: `Bonjour ${user.name},
+
+Clique sur ce lien pour choisir un nouveau mot de passe (valable 1 heure) :
+${resetLink}
+
+Si tu n'es pas à l'origine de cette demande, ignore simplement cet e-mail — ton mot de passe actuel reste inchangé.
+
+— L'équipe PeguyTbn`,
   });
 }
 
@@ -280,30 +312,47 @@ function sendPaymentConfirmationEmail(user, payment) {
     payment.provider === 'moncash' || payment.provider === 'bazik'
       ? `${payment.amountHtg} HTG`
       : `${payment.amountUsd} $`;
+  const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/pronostics-vip`;
   return sendMail({
     to: user.email,
-    subject: 'Paiement confirmé — Bienvenue en Premium PeguyTbn',
+    subject: 'Paiement confirmé — ton accès VIP PeguyTbn est actif',
     html: renderEmail({
-      preheader: 'Ton accès Premium PeguyTbn est actif.',
+      preheader: 'Ton paiement est confirmé, ton accès VIP PeguyTbn est actif dès maintenant.',
       category: 'payment',
       kicker: 'PAIEMENT',
-      heading: `Paiement confirmé 🎉`,
-      bodyHtml: `<p style="margin:0;">Bonjour ${name}, ton paiement a été confirmé et ton accès <strong>Premium</strong> est actif. Tu as maintenant accès aux cotes en direct, aux value bets et aux pronostics VIP.</p>`,
+      heading: `Paiement confirmé — bienvenue chez les VIP`,
+      bodyHtml: `<p style="margin:0;">Bonjour ${name}, ton paiement a été confirmé et ton accès <strong>VIP</strong> est actif dès maintenant. Cotes en direct, value bets et pronostics VIP de nos meilleurs pronostiqueurs n'ont plus de secret pour toi.</p>`,
       stats: [
         { label: 'Montant', value: amountLabel },
-        { label: 'Plan', value: 'Premium' },
+        { label: 'Plan', value: 'VIP' },
         { label: 'Durée', value: days ? `${days} jours` : '—' },
       ],
-      ctaText: 'Découvrir le Monitoring en direct',
-      ctaUrl: `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/monitoring`,
+      ctaText: 'Voir mes pronostics VIP',
+      ctaUrl: url,
+      secondaryText: 'Retrouve le détail de ton abonnement (dates, moyen de paiement, historique) à tout moment dans ton espace « Mon abonnement ».',
     }),
+    text: `Bonjour ${user.name},
+
+Ton paiement est confirmé et ton accès VIP PeguyTbn est actif dès maintenant.
+
+Montant : ${amountLabel}
+Plan : VIP
+Durée : ${days ? `${days} jours` : '—'}
+
+Voir mes pronostics VIP : ${url}
+
+— L'équipe PeguyTbn`,
   });
 }
 
 function sendVipExpiringEmail(user, daysRemaining) {
   const name = escapeHtml(user.name);
   const isToday = daysRemaining <= 0;
-  const heading = isToday ? 'Ton accès Premium expire aujourd\'hui' : `Ton accès Premium expire dans ${daysRemaining} jour${daysRemaining > 1 ? 's' : ''}`;
+  const heading = isToday ? "Ton accès VIP expire aujourd'hui" : `Ton accès VIP expire dans ${daysRemaining} jour${daysRemaining > 1 ? 's' : ''}`;
+  const bodyText = isToday
+    ? "Ton accès VIP se termine aujourd'hui. Renouvelle maintenant pour ne pas perdre les pronostics VIP, les value bets et les cotes en direct."
+    : 'Pense à renouveler pour continuer à profiter des pronostics VIP, des value bets et des cotes en direct sans interruption.';
+  const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/premium`;
   return sendMail({
     to: user.email,
     subject: heading,
@@ -313,14 +362,17 @@ function sendVipExpiringEmail(user, daysRemaining) {
       kicker: 'ABONNEMENT',
       heading,
       bodyHtml: `<p style="margin:0 0 12px;">Bonjour ${name},</p>
-        <p style="margin:0 0 12px;">${
-          isToday
-            ? "Ton accès Premium se termine aujourd'hui. Renouvelle maintenant pour ne pas perdre les cotes en direct, les value bets et les pronostics VIP."
-            : `Pense à renouveler pour continuer à profiter des cotes en direct, des value bets et des pronostics VIP sans interruption.`
-        }</p>`,
-      ctaText: 'Renouveler mon accès Premium',
-      ctaUrl: `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/premium`,
+        <p style="margin:0 0 12px;">${bodyText}</p>`,
+      ctaText: 'Renouveler mon accès VIP',
+      ctaUrl: url,
     }),
+    text: `Bonjour ${user.name},
+
+${bodyText}
+
+Renouveler mon accès VIP : ${url}
+
+— L'équipe PeguyTbn`,
   });
 }
 
@@ -344,6 +396,13 @@ function sendOtpEmail(user, otp) {
         </table>`,
       secondaryText: 'Ce code est valable <strong>10 minutes</strong>. Si tu n\'es pas à l\'origine de cette demande, ignore cet e-mail.',
     }),
+    text: `Bonjour ${user.name},
+
+Voici ton code pour réinitialiser ton mot de passe : ${otp}
+
+Ce code est valable 10 minutes. Si tu n'es pas à l'origine de cette demande, ignore cet e-mail.
+
+— L'équipe PeguyTbn`,
   });
 }
 
@@ -355,6 +414,7 @@ function sendNewPicksEmail(user, { message } = {}) {
   const name = escapeHtml(user.name);
   const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/pronostics-vip`;
   if (user.lang === 'en') {
+    const bodyText = message || 'Our tipsters just published new VIP picks — check them out before kickoff.';
     return sendMail({
       to: user.email,
       subject: 'New VIP picks available on PeguyTbn',
@@ -363,14 +423,21 @@ function sendNewPicksEmail(user, { message } = {}) {
         category: 'payment',
         kicker: 'VIP',
         heading: `New picks are waiting for you, ${name}`,
-        bodyHtml: `<p style="margin:0 0 12px;">${
-          message ? escapeHtml(message) : 'Our tipsters just published new VIP picks — check them out before kickoff.'
-        }</p>`,
+        bodyHtml: `<p style="margin:0 0 12px;">${escapeHtml(bodyText)}</p>`,
         ctaText: 'View VIP picks',
         ctaUrl: url,
+        footerNote: 'Manage your notification preferences anytime in Settings.',
       }),
+      text: `Hi ${user.name},
+
+${bodyText}
+
+View VIP picks: ${url}
+
+— The PeguyTbn team`,
     });
   }
+  const bodyText = message || "Nos pronostiqueurs viennent de publier de nouvelles sélections VIP — jette-y un œil avant le coup d'envoi.";
   return sendMail({
     to: user.email,
     subject: 'Nouveaux pronostics VIP disponibles sur PeguyTbn',
@@ -379,12 +446,18 @@ function sendNewPicksEmail(user, { message } = {}) {
       category: 'payment',
       kicker: 'VIP',
       heading: `De nouveaux pronostics t'attendent, ${name}`,
-      bodyHtml: `<p style="margin:0 0 12px;">${
-        message ? escapeHtml(message) : "Nos pronostiqueurs viennent de publier de nouvelles sélections VIP — jette-y un œil avant le coup d'envoi."
-      }</p>`,
+      bodyHtml: `<p style="margin:0 0 12px;">${escapeHtml(bodyText)}</p>`,
       ctaText: 'Voir les pronostics VIP',
       ctaUrl: url,
+      footerNote: 'Gère tes préférences de notification à tout moment dans Paramètres.',
     }),
+    text: `Bonjour ${user.name},
+
+${bodyText}
+
+Voir les pronostics VIP : ${url}
+
+— L'équipe PeguyTbn`,
   });
 }
 
