@@ -21,18 +21,18 @@ function canEdit(user, pred) {
 router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res) => {
   const { title, legs, is_vip } = req.body || {};
   if (!title || !title.trim()) {
-    return res.status(400).json({ error: 'Le titre du combiné est requis.' });
+    return res.status(400).json({ error: 'Le titre du pronostic est requis.' });
   }
-  if (!Array.isArray(legs) || legs.length < 2) {
-    return res.status(400).json({ error: 'Un combiné doit contenir au moins 2 sélections.' });
+  if (!Array.isArray(legs) || legs.length < 1) {
+    return res.status(400).json({ error: 'Un pronostic doit contenir au moins un match.' });
   }
   for (const [i, leg] of legs.entries()) {
     const missing = LEG_REQUIRED_FIELDS.filter((f) => !leg[f]);
     if (missing.length) {
-      return res.status(400).json({ error: `Sélection ${i + 1} : champs manquants (${missing.join(', ')}).` });
+      return res.status(400).json({ error: `Match ${i + 1} : champs manquants (${missing.join(', ')}).` });
     }
     if (!(Number(leg.odd) > 1)) {
-      return res.status(400).json({ error: `Sélection ${i + 1} : la cote doit être supérieure à 1.` });
+      return res.status(400).json({ error: `Match ${i + 1} : la cote doit être supérieure à 1.` });
     }
   }
 
