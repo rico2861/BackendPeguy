@@ -19,6 +19,22 @@ function isToday(iso) {
 
 const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Every plan record carries BOTH amountUsd (the reference price shown in
+// the UI) and amountHtg (what MonCash/Bazik actually charge), even though
+// only one of the two was ever real money for a given purchase — MonCash
+// never actually collects the USD figure, it's just the price tag. Summing
+// amountUsd unconditionally (as the daily-chart/period loops below used
+// to) made a MonCash-only client base show fake "USD revenue" nobody
+// actually paid — the exact bug already fixed once for the payment
+// confirmation e-mail and Subscription.jsx (see their own comments); this
+// mirrors that same provider-aware rule for the admin dashboard's charts.
+function isUsdProvider(provider) {
+  return provider === 'nowpayments';
+}
+function isHtgProvider(provider) {
+  return provider === 'moncash' || provider === 'bazik';
+}
+
 // Charts accept either `?days=N` (7/30/90/180/365, the quick filter chips)
 // or an explicit `?from=YYYY-MM-DD&to=YYYY-MM-DD` (the custom range
 // picker) — `from`/`to` win when both are present and valid. Capped at 2
@@ -116,8 +132,8 @@ router.get('/dashboard', async (req, res) => {
     for (const plan of u.planHistory || []) {
       if (!isToday(plan.startedAt)) continue;
       newSubscriptionsToday += 1;
-      if (plan.amountUsd) revenueTodayUsd += plan.amountUsd;
-      if (plan.amountHtg) revenueTodayHtg += plan.amountHtg;
+      if (plan.amountUsd && isUsdProvider(plan.provider)) revenueTodayUsd += plan.amountUsd;
+      if (plan.amountHtg && isHtgProvider(plan.provider)) revenueTodayHtg += plan.amountHtg;
     }
   }
   const predictionsPublishedToday = predictions.filter((p) => isToday(p.created_at)).length;
@@ -159,11 +175,11 @@ router.get('/dashboard', async (req, res) => {
       const date = String(plan.startedAt).slice(0, 10);
       if (date < fromIso || date > toIso) continue;
       if (!revenueByDate.has(date)) revenueByDate.set(date, { date, usd: 0, htg: 0 });
-      if (plan.amountUsd) {
+      if (plan.amountUsd && isUsdProvider(plan.provider)) {
         revenueByDate.get(date).usd += plan.amountUsd;
         periodRevenueUsd += plan.amountUsd;
       }
-      if (plan.amountHtg) {
+      if (plan.amountHtg && isHtgProvider(plan.provider)) {
         revenueByDate.get(date).htg += plan.amountHtg;
         periodRevenueHtg += plan.amountHtg;
       }
