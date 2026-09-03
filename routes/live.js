@@ -2,6 +2,7 @@ const express = require('express');
 const footballData = require('../services/footballData');
 const oddsApi = require('../services/oddsApi');
 const sofascore = require('../services/sofascore');
+const soccersApi = require('../services/soccersApi');
 const COMPETITIONS = require('../services/competitions');
 const Prediction = require('../models/Prediction');
 const { teamsLooselyMatch } = require('../utils/normalizeTeam');
@@ -22,10 +23,23 @@ function maskOddsForViewer(match, viewer) {
 }
 
 // Static country -> league list for the moderator's cascading picker
-// (pays -> championnat). Doesn't touch football-data.org, so it's free
-// and instant even when the API key/quota is unavailable.
-router.get('/live/competitions', (req, res) => {
-  res.json({ competitions: COMPETITIONS });
+// (pays -> championnat), plus whatever leagues the SoccersAPI account
+// actually has unlocked (admin.soccersapi.com/leagues — Free Plan gives
+// 3 unrelated leagues, a paid plan lets you pick the ones you want:
+// Europa League, Conference League, Turkey, 2nd divisions...). The
+// football-data.org half stays static/instant; only the SoccersAPI half
+// makes a real (cached) network call, and quietly contributes nothing if
+// it's not configured or the call fails — never blocks the picker.
+router.get('/live/competitions', async (req, res) => {
+  let extra = [];
+  if (soccersApi.isConfigured()) {
+    try {
+      extra = await soccersApi.listLeagues();
+    } catch {
+      extra = [];
+    }
+  }
+  res.json({ competitions: [...COMPETITIONS, ...extra] });
 });
 
 // Real upcoming/live/recent fixtures for one competition, used by the
@@ -33,6 +47,22 @@ router.get('/live/competitions', (req, res) => {
 // scheduled match (real date/time/teams) instead of free-typed data.
 router.get('/live/fixtures', authenticateOptional, async (req, res) => {
   const { competition, days = 10 } = req.query;
+
+  // SoccersAPI-backed league (code shape "SA-<leagueId>", see
+  // services/soccersApi.js) — separate provider, separate quota.
+  if (competition?.startsWith('SA-')) {
+    if (!soccersApi.isConfigured()) {
+      return res.json({ matches: [], message: 'Aucune donnée réelle disponible : ajoutez SOCCERSAPI_USER/SOCCERSAPI_TOKEN dans backend/.env.' });
+    }
+    try {
+      const leagueId = competition.slice(3);
+      const matches = await soccersApi.fetchFixturesForLeagueRange(leagueId, days);
+      return res.json({ matches });
+    } catch (err) {
+      return res.status(502).json({ matches: [], error: err.message });
+    }
+  }
+
   const comp = COMPETITION_BY_CODE.get(competition);
   if (!comp) return res.status(400).json({ error: 'Championnat inconnu.' });
 
