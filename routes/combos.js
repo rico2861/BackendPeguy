@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const Prediction = require('../models/Prediction');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorize, authenticateOptional } = require('../middleware/auth');
 const { recordAudit } = require('../middleware/audit');
 const { notifyPublish } = require('../services/notifyPublish');
 
@@ -80,6 +80,16 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
       total_odd: Math.round(totalOdd * 100) / 100,
     },
   });
+});
+
+// Fetches a single combiné by its ticket_group id — needed so a favorited
+// coupon (Favorites.jsx favorites the ticket_group id, same as it favorites
+// a plain prediction id) can be resolved back into a renderable ticket,
+// since GET /predictions/:id only ever matches a real prediction id.
+router.get('/:groupId', authenticateOptional, async (req, res) => {
+  const ticket = await Prediction.getTicket(req.params.groupId, req.user);
+  if (!ticket) return res.status(404).json({ error: 'Combiné introuvable.' });
+  res.json({ ticket });
 });
 
 router.delete('/:groupId', authenticate, authorize('moderator', 'admin'), async (req, res) => {

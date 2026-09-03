@@ -233,56 +233,79 @@ function withLockState(pred, viewer) {
   return locked ? { ...maskFields(pred), locked } : { ...pred, locked };
 }
 
+// Shared by dailyTickets() (many groups at once) and getTicket() (a single
+// known group) — builds the exact ticket shape TicketCard renders from a
+// groupId and its legs. `date` is only used as a display fallback when the
+// caller doesn't already know it (dailyTickets passes the requested date;
+// getTicket has no single "requested date" so it derives one from the legs).
+function buildTicket(groupId, legs, viewer, date) {
+  let title = null;
+  // Take the title from whichever leg has one, not just whichever leg
+  // happens to be first in the array — legs are meant to share the same
+  // title, but if one was ever edited individually and left null, the
+  // group shouldn't fall back to "Combiné" just because of iteration order.
+  for (const leg of legs) {
+    if (!title && leg.ticket_title) title = leg.ticket_title;
+  }
+  const totalOdd = legs.reduce((acc, leg) => acc * leg.odd, 1);
+  // Explicit product choice (not the usual accumulator rule where one
+  // loss sinks the whole ticket): the coupon only shows PERDU once every
+  // single leg has lost, and GAGNÉ once every leg has won. Any other
+  // combination (including a mix of won/lost) stays "EN COURS" — each
+  // leg's own status is still visible individually (see LegStatus).
+  let result = null;
+  if (legs.every((leg) => leg.result === 'lost')) result = 'lost';
+  else if (legs.every((leg) => leg.result === 'won')) result = 'won';
+  // A ticket is locked for this viewer if any leg is — team names/picks
+  // on those legs get blurred client-side rather than the whole combo
+  // being hidden.
+  const locked = legs.some((leg) => isLocked(leg, viewer));
+  // If total_odd stayed the real product while individual locked legs
+  // are masked, anyone who knows the odds of the unlocked legs could
+  // divide it out and recover the locked leg's real odd — defeating the
+  // masking. Hide it the same way as the legs it's derived from.
+  // "Newest leg" rather than "oldest" — a combo can have legs added at
+  // different times (see ComboForm's add-leg flow), and what a returning
+  // visitor cares about is whether anything about this coupon changed
+  // recently, not just when the group was first created.
+  const createdAt = legs.reduce((max, leg) => (leg.created_at > max ? leg.created_at : max), legs[0]?.created_at || null);
+  return {
+    id: groupId,
+    type: legs[0]?.ticket_type || null,
+    title,
+    date: date ?? legs[0]?.match_date ?? null,
+    result,
+    locked,
+    legs: legs.map((leg) => withLockState(leg, viewer)),
+    total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
+    created_at: createdAt,
+  };
+}
+
 async function dailyTickets(date, viewer, dateFrom) {
   const preds = (await listPredictions({ date, dateFrom })).filter((p) => p.ticket_group);
   const groups = new Map();
   for (const p of preds) {
-    if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, { type: p.ticket_type, title: null, legs: [] });
-    const g = groups.get(p.ticket_group);
-    // Take the title from whichever leg has one, not just whichever leg
-    // happens to be first in the array — legs are meant to share the same
-    // title, but if one was ever edited individually and left null, the
-    // group shouldn't fall back to "Combiné" just because of iteration order.
-    if (!g.title && p.ticket_title) g.title = p.ticket_title;
-    g.legs.push(p);
+    if (!groups.has(p.ticket_group)) groups.set(p.ticket_group, []);
+    groups.get(p.ticket_group).push(p);
   }
   const tickets = [];
-  for (const [groupId, g] of groups) {
-    const totalOdd = g.legs.reduce((acc, leg) => acc * leg.odd, 1);
-    // Explicit product choice (not the usual accumulator rule where one
-    // loss sinks the whole ticket): the coupon only shows PERDU once every
-    // single leg has lost, and GAGNÉ once every leg has won. Any other
-    // combination (including a mix of won/lost) stays "EN COURS" — each
-    // leg's own status is still visible individually (see LegStatus).
-    let result = null;
-    if (g.legs.every((leg) => leg.result === 'lost')) result = 'lost';
-    else if (g.legs.every((leg) => leg.result === 'won')) result = 'won';
-    // A ticket is locked for this viewer if any leg is — team names/picks
-    // on those legs get blurred client-side rather than the whole combo
-    // being hidden.
-    const locked = g.legs.some((leg) => isLocked(leg, viewer));
-    // If total_odd stayed the real product while individual locked legs
-    // are masked, anyone who knows the odds of the unlocked legs could
-    // divide it out and recover the locked leg's real odd — defeating the
-    // masking. Hide it the same way as the legs it's derived from.
-    // "Newest leg" rather than "oldest" — a combo can have legs added at
-    // different times (see ComboForm's add-leg flow), and what a returning
-    // visitor cares about is whether anything about this coupon changed
-    // recently, not just when the group was first created.
-    const createdAt = g.legs.reduce((max, leg) => (leg.created_at > max ? leg.created_at : max), g.legs[0]?.created_at || null);
-    tickets.push({
-      id: groupId,
-      type: g.type,
-      title: g.title,
-      date,
-      result,
-      locked,
-      legs: g.legs.map((leg) => withLockState(leg, viewer)),
-      total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
-      created_at: createdAt,
-    });
+  for (const [groupId, legs] of groups) {
+    tickets.push(buildTicket(groupId, legs, viewer, date));
   }
   return tickets;
+}
+
+// Fetches a single combiné/coupon by its ticket_group id, in the exact same
+// shape dailyTickets() produces per ticket — used so a favorited coupon can
+// be resolved back to a renderable ticket (see routes GET /tickets/:groupId
+// and Favorites.jsx, which favorites a ticket_group id the same way it
+// favorites a plain prediction id).
+async function getTicket(groupId, viewer) {
+  const all = await listPredictions({});
+  const legs = all.filter((p) => p.ticket_group === groupId);
+  if (legs.length === 0) return null;
+  return buildTicket(groupId, legs, viewer);
 }
 
 module.exports = {
@@ -293,6 +316,7 @@ module.exports = {
   updatePrediction,
   deletePrediction,
   dailyTickets,
+  getTicket,
   isLocked,
   withLockState,
   trySettle,
