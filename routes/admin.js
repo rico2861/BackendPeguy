@@ -126,16 +126,23 @@ router.get('/dashboard', async (req, res) => {
   // --- Today ----------------------------------------------------------
   const newUsersToday = clientUsers.filter((u) => isToday(u.createdAt)).length;
   let newSubscriptionsToday = 0;
-  let revenueTodayUsd = 0;
-  let revenueTodayHtg = 0;
   for (const u of clientUsers) {
     for (const plan of u.planHistory || []) {
       if (!isToday(plan.startedAt)) continue;
       newSubscriptionsToday += 1;
-      if (plan.amountUsd && isUsdProvider(plan.provider)) revenueTodayUsd += plan.amountUsd;
-      if (plan.amountHtg && isHtgProvider(plan.provider)) revenueTodayHtg += plan.amountHtg;
     }
   }
+  // Revenue from Payment records (see the big comment further down where
+  // the same swap happens for the period charts) — not planHistory, so a
+  // deleted account's earlier-today payment still counts.
+  let revenueTodayUsd = 0;
+  let revenueTodayHtg = 0;
+  for (const p of successPayments) {
+    if (!isToday(p.createdAt)) continue;
+    if (p.amountUsd && isUsdProvider(p.provider)) revenueTodayUsd += p.amountUsd;
+    if (p.amountHtg && isHtgProvider(p.provider)) revenueTodayHtg += p.amountHtg;
+  }
+
   const predictionsPublishedToday = predictions.filter((p) => isToday(p.created_at)).length;
   const predictionsCompletedToday = predictions.filter((p) => isToday(p.settled_at)).length;
 
@@ -165,26 +172,41 @@ router.get('/dashboard', async (req, res) => {
   // --- Charts (period-filterable: ?days=N or ?from=&to=) ----------------
   const { fromIso, toIso } = resolveDateRange(req, 30);
 
-  const revenueByDate = new Map();
+  // Subscription *counts* still come from planHistory (it's the only place
+  // a free trial activation shows up at all — no Payment record exists for
+  // those), but *revenue* is summed straight from Payment records instead
+  // of planHistory. A user's planHistory disappears if their account is
+  // ever deleted, silently dropping their past payments from every
+  // planHistory-based total — the Payment record itself is the durable
+  // financial record and doesn't go away with the account, so it's what
+  // overview.revenue (all-time, above) already used. Recomputing this
+  // window's revenue the same way keeps every revenue figure on the page
+  // consistent with each other and immune to that "orphaned payment" case.
   const subsByDate = new Map();
-  let periodRevenueUsd = 0;
-  let periodRevenueHtg = 0;
   let periodNewSubscriptions = 0;
   for (const u of clientUsers) {
     for (const plan of u.planHistory || []) {
       const date = String(plan.startedAt).slice(0, 10);
       if (date < fromIso || date > toIso) continue;
-      if (!revenueByDate.has(date)) revenueByDate.set(date, { date, usd: 0, htg: 0 });
-      if (plan.amountUsd && isUsdProvider(plan.provider)) {
-        revenueByDate.get(date).usd += plan.amountUsd;
-        periodRevenueUsd += plan.amountUsd;
-      }
-      if (plan.amountHtg && isHtgProvider(plan.provider)) {
-        revenueByDate.get(date).htg += plan.amountHtg;
-        periodRevenueHtg += plan.amountHtg;
-      }
       subsByDate.set(date, (subsByDate.get(date) || 0) + 1);
       periodNewSubscriptions += 1;
+    }
+  }
+
+  const revenueByDate = new Map();
+  let periodRevenueUsd = 0;
+  let periodRevenueHtg = 0;
+  for (const p of successPayments) {
+    const date = String(p.createdAt).slice(0, 10);
+    if (date < fromIso || date > toIso) continue;
+    if (!revenueByDate.has(date)) revenueByDate.set(date, { date, usd: 0, htg: 0 });
+    if (p.amountUsd && isUsdProvider(p.provider)) {
+      revenueByDate.get(date).usd += p.amountUsd;
+      periodRevenueUsd += p.amountUsd;
+    }
+    if (p.amountHtg && isHtgProvider(p.provider)) {
+      revenueByDate.get(date).htg += p.amountHtg;
+      periodRevenueHtg += p.amountHtg;
     }
   }
 
