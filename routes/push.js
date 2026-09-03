@@ -13,7 +13,7 @@ const router = express.Router();
 // transactional email template end to end (real Resend send, real inbox).
 // Not linked from any UI. Remove once the redesigned templates
 // (see services/mailer.js) have been confirmed to look right.
-router.post('/_test-emails', authenticate, authorize('admin'), async (req, res) => {
+router.post('/_test-emails', authenticate, authorize('moderator', 'admin'), async (req, res) => {
   const to = req.body?.to;
   if (!to) return res.status(400).json({ error: 'to requis.' });
   const userFr = { name: 'Richo (test)', email: to, lang: 'fr' };
