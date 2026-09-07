@@ -4,7 +4,6 @@ const { authenticateOptional, authenticate, authorize } = require('../middleware
 const { recordAudit } = require('../middleware/audit');
 const { syncPredictionsWithLiveResults } = require('../services/predictionSync');
 const { notifyPublish } = require('../services/notifyPublish');
-const db = require('../db');
 
 const router = express.Router();
 
@@ -200,20 +199,6 @@ router.delete('/predictions/:id', authenticate, authorize('moderator', 'admin'),
     previousValue: { market: existing.market, pick: existing.pick, odd: existing.odd },
   });
   res.status(204).end();
-});
-
-// TEMPORARY — pre-launch data wipe requested by the site owner (delete
-// every test prediction/coupon, payment, and audit log before going
-// live). Admin-only, no side effects beyond the three tables named.
-// Remove this route once used.
-router.post('/_launch-cleanup', authenticate, authorize('admin'), async (req, res) => {
-  const [preds, pays] = await Promise.all([db.readPredictions(), db.readPayments()]);
-  const predictionsDeleted = preds.length;
-  const paymentsDeleted = pays.length;
-  await db.writePredictions([]);
-  await db.writePayments([]);
-  const auditLogsDeleted = await db.clearAuditLogs();
-  res.json({ predictionsDeleted, paymentsDeleted, auditLogsDeleted });
 });
 
 module.exports = router;
