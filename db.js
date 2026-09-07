@@ -84,6 +84,12 @@ async function readAuditLogs({ limit = 200 } = {}) {
   return rows.map((r) => r.data);
 }
 
+async function clearAuditLogs() {
+  await ensureSchema();
+  const { rowCount } = await pool.query('DELETE FROM audit_logs');
+  return rowCount;
+}
+
 async function appendAdminNotification(entry) {
   await ensureSchema();
   await pool.query('INSERT INTO admin_notifications (id, data) VALUES ($1, $2::jsonb)', [entry.id, JSON.stringify(entry)]);
@@ -155,6 +161,7 @@ module.exports = {
   writePayments: (data) => writeTable('payments', data),
   appendAuditLog,
   readAuditLogs,
+  clearAuditLogs,
   appendAdminNotification,
   readAdminNotifications,
   appendMemberNotification,
