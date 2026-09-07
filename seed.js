@@ -8,7 +8,10 @@ const User = require('./models/User');
 
 // Demo-only credentials — meant to be changed or removed before any real
 // public launch. Each is only created if that email doesn't already exist,
-// so re-running the seed (every container boot, see Dockerfile) is safe.
+// so re-running the seed manually is safe. No longer run automatically on
+// every container boot (see Dockerfile) — that re-inserted demo picks and
+// demo accounts every time predictions/users happened to be empty, which
+// silently undid a real pre-launch data cleanup.
 const DEMO_ACCOUNTS = [
   { role: 'user', name: 'Demo Utilisateur', email: 'demo.user@peguytbn.local', phone: '+50900000001', password: 'DemoUser123!' },
   { role: 'moderator', name: 'Demo Pronostiqueur', email: 'demo.moderator@peguytbn.local', phone: '+50900000002', password: 'DemoMod123!' },
