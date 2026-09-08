@@ -58,6 +58,16 @@ async function listLeagues() {
 }
 
 async function createPrediction(data, userId, userName) {
+  console.log('[DEBUG createPrediction]', new Date().toISOString(), {
+    home_team: data.home_team,
+    away_team: data.away_team,
+    match_date: data.match_date,
+    pick: data.pick,
+    is_vip: !!data.is_vip,
+    userId,
+    userName,
+    caller: new Error().stack,
+  });
   const preds = await readPredictions();
   const ts = nowIso();
   const pred = {
