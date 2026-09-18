@@ -92,6 +92,55 @@ router.get('/:groupId', authenticateOptional, async (req, res) => {
   res.json({ ticket });
 });
 
+// Updates a combiné: the shared title/is_vip on every leg, plus per-leg
+// fields for any leg included in the `legs` array (matched by id — legs
+// omitted from the array are left untouched, same partial-update contract
+// as PUT /predictions/:id).
+router.put('/:groupId', authenticate, authorize('moderator', 'admin'), async (req, res) => {
+  const all = await Prediction.listPredictions({});
+  const legs = all.filter((p) => p.ticket_group === req.params.groupId);
+  if (legs.length === 0) return res.status(404).json({ error: 'Combiné introuvable.' });
+  if (!legs.every((leg) => canEdit(req.user, leg))) {
+    return res.status(403).json({ error: 'Vous ne pouvez modifier que vos propres combinés.' });
+  }
+
+  const { title, is_vip, legs: legUpdates } = req.body || {};
+  if (title !== undefined && !title.trim()) {
+    return res.status(400).json({ error: 'Le titre du pronostic est requis.' });
+  }
+  if (legUpdates !== undefined && !Array.isArray(legUpdates)) {
+    return res.status(400).json({ error: 'legs doit être un tableau.' });
+  }
+  for (const legUpdate of legUpdates || []) {
+    if (!legUpdate.id || !legs.some((leg) => leg.id === legUpdate.id)) {
+      return res.status(400).json({ error: `Match introuvable dans ce combiné (id: ${legUpdate.id}).` });
+    }
+    if (legUpdate.odd !== undefined && !(Number(legUpdate.odd) > 1)) {
+      return res.status(400).json({ error: 'La cote doit être supérieure à 1.' });
+    }
+  }
+
+  const shared = {};
+  if (title !== undefined) shared.ticket_title = title.trim();
+  if (is_vip !== undefined) shared.is_vip = !!is_vip;
+
+  const updatedLegs = [];
+  for (const leg of legs) {
+    const legUpdate = (legUpdates || []).find((l) => l.id === leg.id) || {};
+    const { id, ...legFields } = legUpdate;
+    const updated = await Prediction.updatePrediction(leg.id, { ...shared, ...legFields });
+    updatedLegs.push(updated);
+  }
+
+  recordAudit(req, {
+    action: 'combo.updated',
+    target: `combo:${req.params.groupId}`,
+    previousValue: { title: legs[0].ticket_title, is_vip: legs[0].is_vip },
+    newValue: { title: updatedLegs[0].ticket_title, is_vip: updatedLegs[0].is_vip },
+  });
+  res.json({ ticket: await Prediction.getTicket(req.params.groupId, req.user) });
+});
+
 router.delete('/:groupId', authenticate, authorize('moderator', 'admin'), async (req, res) => {
   const all = await Prediction.listPredictions({});
   const legs = all.filter((p) => p.ticket_group === req.params.groupId);
