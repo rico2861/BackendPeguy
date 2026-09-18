@@ -268,4 +268,26 @@ router.get('/audit-logs', async (req, res) => {
   res.json({ logs });
 });
 
+// One-off repair for predictions published while match_date/match_time
+// were briefly nullable on the create form (before that form started
+// defaulting them itself) — those rows are invisible on every public page
+// since VIP/Free Bets/daily tickets all filter and sort by date. Backfills
+// today's date/current time onto any prediction still missing one.
+// Safe to call repeatedly (a no-op once nothing is missing) — remove this
+// route once confirmed nothing needs it any more.
+router.post('/backfill-prediction-dates', async (req, res) => {
+  const preds = await Prediction.listPredictions({});
+  const nowLocal = new Date();
+  const today = nowLocal.toISOString().slice(0, 10);
+  const time = nowLocal.toTimeString().slice(0, 5);
+  const toFix = preds.filter((p) => !p.match_date || !p.match_time);
+  for (const p of toFix) {
+    await Prediction.updatePrediction(p.id, {
+      match_date: p.match_date || today,
+      match_time: p.match_time || time,
+    });
+  }
+  res.json({ fixed: toFix.length, ids: toFix.map((p) => p.id) });
+});
+
 module.exports = router;
