@@ -163,9 +163,18 @@ async function updatePrediction(id, data) {
   // "pending") each time anything else about it was edited.
   const touchesGrading =
     !forcingResult && ['pick', 'market', 'score_home', 'score_away', 'status'].some((f) => f in data && data[f] !== existing[f]);
+  // Forcing a real result (won/lost/void) means the match is over, even if
+  // the moderator only clicked Gagné/Perdu/Annulé from the combo's quick-
+  // settle modal and never separately flipped Statut to Terminé (FT) on
+  // the full edit form — without this, the leg (and the ticket built from
+  // it) kept showing as "À venir"/kickoff time forever despite having a
+  // final result. Only kicks in when the caller didn't already send an
+  // explicit status of its own.
+  const status = forcingResult && data.result && !('status' in data) ? 'FT' : data.status ?? existing.status;
   const merged = {
     ...existing,
     ...data,
+    status,
     probability:
       data.probability === '' || data.probability === undefined
         ? existing.probability
