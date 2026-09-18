@@ -7,7 +7,10 @@ const { notifyPublish } = require('../services/notifyPublish');
 
 const router = express.Router();
 
-const REQUIRED_FIELDS = ['home_team', 'away_team', 'match_date', 'match_time', 'market', 'pick', 'odd'];
+// Only the essentials are required — country/league/date/time/market/odd
+// can all be filled in later by editing the pick, same relaxation as a
+// combo leg (see routes/combos.js's LEG_REQUIRED_FIELDS).
+const REQUIRED_FIELDS = ['home_team', 'away_team', 'pick'];
 
 // Best-effort: nudge predictions back in sync with real results.
 // syncPredictionsWithLiveResults() self-throttles (30s) and a background
