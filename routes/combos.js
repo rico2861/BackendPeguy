@@ -7,7 +7,10 @@ const { notifyPublish } = require('../services/notifyPublish');
 
 const router = express.Router();
 
-const LEG_REQUIRED_FIELDS = ['home_team', 'away_team', 'match_date', 'match_time', 'market', 'pick', 'odd'];
+// Odd is intentionally not required — a leg imported from a tips
+// screenshot (see ComboForm's OCR import) often doesn't have it yet, and
+// a moderator can fill it in later by editing the leg.
+const LEG_REQUIRED_FIELDS = ['home_team', 'away_team', 'match_date', 'match_time', 'market', 'pick'];
 
 function canEdit(user, pred) {
   if (user.role === 'admin') return true;
@@ -32,8 +35,8 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
     if (missing.length) {
       return res.status(400).json({ error: `Match ${i + 1} : champs manquants (${missing.join(', ')}).` });
     }
-    if (!(Number(leg.odd) > 1)) {
-      return res.status(400).json({ error: `Match ${i + 1} : la cote doit être supérieure à 1.` });
+    if (leg.odd !== undefined && leg.odd !== null && leg.odd !== '' && !(Number(leg.odd) > 1)) {
+      return res.status(400).json({ error: `Match ${i + 1} : la cote doit être supérieure à 1 (ou laisse-la vide).` });
     }
   }
 
@@ -48,11 +51,12 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
     createdLegs.push(pred);
   }
 
-  const totalOdd = createdLegs.reduce((acc, leg) => acc * leg.odd, 1);
+  const hasAllOdds = createdLegs.every((leg) => leg.odd != null);
+  const totalOdd = hasAllOdds ? createdLegs.reduce((acc, leg) => acc * leg.odd, 1) : null;
   recordAudit(req, {
     action: 'combo.created',
     target: `combo:${ticketGroup}`,
-    newValue: { title: title.trim(), legs: createdLegs.length, total_odd: Math.round(totalOdd * 100) / 100 },
+    newValue: { title: title.trim(), legs: createdLegs.length, total_odd: totalOdd == null ? null : Math.round(totalOdd * 100) / 100 },
   });
   // Same automatic fan-out as a VIP solo pick (see routes/predictions.js) —
   // a VIP coupon reaches subscribers (push + VIP e-mail) the moment it's
@@ -77,7 +81,7 @@ router.post('/', authenticate, authorize('moderator', 'admin'), async (req, res)
       locked: false,
       result: null,
       legs: createdLegs,
-      total_odd: Math.round(totalOdd * 100) / 100,
+      total_odd: totalOdd == null ? null : Math.round(totalOdd * 100) / 100,
     },
   });
 });

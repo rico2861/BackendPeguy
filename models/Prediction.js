@@ -75,7 +75,7 @@ async function createPrediction(data, userId, userName) {
     market: data.market || '1X2',
     pick: data.pick,
     probability: data.probability === '' || data.probability === undefined ? null : Number(data.probability),
-    odd: Number(data.odd),
+    odd: data.odd === '' || data.odd === undefined || data.odd === null ? null : Number(data.odd),
     ticket_group: data.ticket_group || null,
     ticket_type: data.ticket_type || null,
     ticket_title: data.ticket_title || null,
@@ -138,7 +138,12 @@ async function updatePrediction(id, data) {
       data.probability === '' || data.probability === undefined
         ? existing.probability
         : Number(data.probability),
-    odd: data.odd !== undefined ? Number(data.odd) : existing.odd,
+    odd:
+      data.odd === '' || data.odd === null
+        ? null
+        : data.odd !== undefined
+        ? Number(data.odd)
+        : existing.odd,
     result: forcingResult ? data.result : touchesGrading ? null : existing.result,
     settled_at: forcingResult ? (data.result ? nowIso() : null) : touchesGrading ? null : existing.settled_at,
     settled_by: forcingResult ? (data.result ? 'manual' : null) : touchesGrading ? null : existing.settled_by,
@@ -254,7 +259,12 @@ function buildTicket(groupId, legs, viewer, date) {
   for (const leg of legs) {
     if (!title && leg.ticket_title) title = leg.ticket_title;
   }
-  const totalOdd = legs.reduce((acc, leg) => acc * leg.odd, 1);
+  // A leg published without a cote yet (see ComboForm's OCR import — the
+  // odd isn't in a tips screenshot) makes the combo's total impossible to
+  // compute honestly, so total_odd is null rather than silently treating
+  // the missing leg as if its odd were 1.
+  const hasAllOdds = legs.every((leg) => leg.odd != null);
+  const totalOdd = hasAllOdds ? legs.reduce((acc, leg) => acc * leg.odd, 1) : null;
   // Explicit product choice (not the usual accumulator rule where one
   // loss sinks the whole ticket): the coupon only shows PERDU once every
   // single leg has lost, and GAGNÉ once every leg has won. Any other
@@ -284,7 +294,7 @@ function buildTicket(groupId, legs, viewer, date) {
     result,
     locked,
     legs: legs.map((leg) => withLockState(leg, viewer)),
-    total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
+    total_odd: locked || totalOdd == null ? null : Math.round(totalOdd * 100) / 100,
     created_at: createdAt,
   };
 }
