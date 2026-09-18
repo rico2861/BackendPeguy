@@ -2,7 +2,7 @@ const express = require('express');
 const moncash = require('../services/moncash');
 const nowpayments = require('../services/nowpayments');
 const bazik = require('../services/bazik');
-const { getPlans, priceForPlan, setPlanPrice } = require('../services/plans');
+const { getPlans, priceForPlan, setPlanPrice, deletePlan, DEFAULT_PLANS } = require('../services/plans');
 const { reconcile, liveCheck } = require('../services/paymentService');
 const crossPlatform = require('../services/crossPlatform');
 const { sweepPendingPayments, getLastSyncStatus } = require('../services/paymentSync');
@@ -38,6 +38,27 @@ router.put('/plans/:type', authenticate, authorize('admin'), async (req, res) =>
     target: `plan:${req.params.type}`,
     previousValue: before[req.params.type] || null,
     newValue: plans[req.params.type],
+  });
+  res.json({ plans });
+});
+
+// Admin-only: remove a plan a moderator/admin created by mistake (e.g. a
+// typo'd key). The built-in "vip" plan can't be deleted this way — it's
+// the base plan the site's payment flow (and /premium) is built around,
+// and getPlans() would just re-seed it from DEFAULT_PLANS anyway.
+router.delete('/plans/:type', authenticate, authorize('admin'), async (req, res) => {
+  if (req.params.type in DEFAULT_PLANS) {
+    return res.status(400).json({ error: `Le plan « ${req.params.type} » est un plan de base et ne peut pas être supprimé.` });
+  }
+  const before = await getPlans();
+  if (!(req.params.type in before)) {
+    return res.status(404).json({ error: 'Plan introuvable.' });
+  }
+  const plans = await deletePlan(req.params.type);
+  recordAudit(req, {
+    action: 'plan.deleted',
+    target: `plan:${req.params.type}`,
+    previousValue: before[req.params.type],
   });
   res.json({ plans });
 });

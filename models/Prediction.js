@@ -7,13 +7,30 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+// match_date/match_time are optional at creation (a leg imported from a
+// tips screenshot rarely has a real kickoff time) and are never faked —
+// staying null is honest. But every date-based filter/sort/grouping below
+// needs *some* date to place the pick on, so anywhere that would otherwise
+// read match_date directly falls back to the pick's publication day
+// instead: a pick with an unknown match date still shows up under the day
+// it was actually published, rather than disappearing or being stamped
+// with a made-up kickoff date.
+function effectiveDate(p) {
+  return p.match_date || (p.created_at || '').slice(0, 10) || null;
+}
+function effectiveTime(p) {
+  if (p.match_time) return p.match_time;
+  if (!p.created_at) return '';
+  return new Date(p.created_at).toISOString().slice(11, 16);
+}
+
 async function listPredictions({ date, dateFrom, league, country, market, q, ticketType } = {}) {
   let preds = await readPredictions();
-  if (date) preds = preds.filter((p) => p.match_date === date);
+  if (date) preds = preds.filter((p) => effectiveDate(p) === date);
   // dateFrom (ignored when an exact date is given) is "today or later" —
   // used by the VIP page so a pick published ahead of its match date is
   // never hidden just because it isn't scheduled for exactly today.
-  else if (dateFrom) preds = preds.filter((p) => p.match_date >= dateFrom);
+  else if (dateFrom) preds = preds.filter((p) => effectiveDate(p) >= dateFrom);
   if (league) preds = preds.filter((p) => p.league === league);
   if (country) preds = preds.filter((p) => p.country === country);
   if (market) preds = preds.filter((p) => p.market === market);
@@ -28,9 +45,9 @@ async function listPredictions({ date, dateFrom, league, country, market, q, tic
     );
   }
   return [...preds].sort((a, b) =>
-    a.match_date === b.match_date
-      ? a.match_time.localeCompare(b.match_time)
-      : a.match_date.localeCompare(b.match_date)
+    effectiveDate(a) === effectiveDate(b)
+      ? effectiveTime(a).localeCompare(effectiveTime(b))
+      : (effectiveDate(a) || '￿').localeCompare(effectiveDate(b) || '￿')
   );
 }
 
@@ -70,6 +87,11 @@ async function createPrediction(data, userId, userName) {
   });
   const preds = await readPredictions();
   const ts = nowIso();
+  // match_date/match_time stay null when not provided — never faked with
+  // today's date here. listPredictions()/buildTicket() below fall back to
+  // the publication date (effectiveDate/effectiveTime) for filtering,
+  // sorting and display, so an undated pick still surfaces under the day
+  // it was actually published instead of under a made-up kickoff date.
   const pred = {
     id: crypto.randomUUID(),
     country: data.country || '',
@@ -77,15 +99,15 @@ async function createPrediction(data, userId, userName) {
     flag: data.flag || '',
     home_team: data.home_team,
     away_team: data.away_team,
-    match_date: data.match_date,
-    match_time: data.match_time,
+    match_date: data.match_date || null,
+    match_time: data.match_time || null,
     status: data.status || 'upcoming',
     score_home: data.score_home ?? null,
     score_away: data.score_away ?? null,
     market: data.market || '1X2',
     pick: data.pick,
     probability: data.probability === '' || data.probability === undefined ? null : Number(data.probability),
-    odd: Number(data.odd),
+    odd: data.odd === '' || data.odd === undefined || data.odd === null ? null : Number(data.odd),
     ticket_group: data.ticket_group || null,
     ticket_type: data.ticket_type || null,
     ticket_title: data.ticket_title || null,
@@ -148,7 +170,12 @@ async function updatePrediction(id, data) {
       data.probability === '' || data.probability === undefined
         ? existing.probability
         : Number(data.probability),
-    odd: data.odd !== undefined ? Number(data.odd) : existing.odd,
+    odd:
+      data.odd === '' || data.odd === null
+        ? null
+        : data.odd !== undefined
+        ? Number(data.odd)
+        : existing.odd,
     result: forcingResult ? data.result : touchesGrading ? null : existing.result,
     settled_at: forcingResult ? (data.result ? nowIso() : null) : touchesGrading ? null : existing.settled_at,
     settled_by: forcingResult ? (data.result ? 'manual' : null) : touchesGrading ? null : existing.settled_by,
@@ -264,7 +291,12 @@ function buildTicket(groupId, legs, viewer, date) {
   for (const leg of legs) {
     if (!title && leg.ticket_title) title = leg.ticket_title;
   }
-  const totalOdd = legs.reduce((acc, leg) => acc * leg.odd, 1);
+  // A leg published without a cote yet (see ComboForm's OCR import — the
+  // odd isn't in a tips screenshot) makes the combo's total impossible to
+  // compute honestly, so total_odd is null rather than silently treating
+  // the missing leg as if its odd were 1.
+  const hasAllOdds = legs.every((leg) => leg.odd != null);
+  const totalOdd = hasAllOdds ? legs.reduce((acc, leg) => acc * leg.odd, 1) : null;
   // Explicit product choice (not the usual accumulator rule where one
   // loss sinks the whole ticket): the coupon only shows PERDU once every
   // single leg has lost, and GAGNÉ once every leg has won. Any other
@@ -290,11 +322,11 @@ function buildTicket(groupId, legs, viewer, date) {
     id: groupId,
     type: legs[0]?.ticket_type || null,
     title,
-    date: date ?? legs[0]?.match_date ?? null,
+    date: date ?? (legs[0] ? effectiveDate(legs[0]) : null),
     result,
     locked,
     legs: legs.map((leg) => withLockState(leg, viewer)),
-    total_odd: locked ? null : Math.round(totalOdd * 100) / 100,
+    total_odd: locked || totalOdd == null ? null : Math.round(totalOdd * 100) / 100,
     created_at: createdAt,
   };
 }
