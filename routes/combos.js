@@ -7,11 +7,12 @@ const { notifyPublish } = require('../services/notifyPublish');
 
 const router = express.Router();
 
-// Odd, date and time are intentionally not required — a leg imported
-// from a tips screenshot (see ComboForm's OCR import) often doesn't have
-// any of these yet, and a moderator can fill them in later by editing
-// the leg.
-const LEG_REQUIRED_FIELDS = ['home_team', 'away_team', 'market', 'pick'];
+// Odd, date, time and market are intentionally not required — a leg
+// imported from a tips screenshot (see ComboForm's OCR import) often
+// doesn't have any of these yet, and a moderator can fill them in later
+// by editing the leg. A missing market falls back to '1X2' in
+// Prediction.createPrediction.
+const LEG_REQUIRED_FIELDS = ['home_team', 'away_team', 'pick'];
 
 function canEdit(user, pred) {
   if (user.role === 'admin') return true;
