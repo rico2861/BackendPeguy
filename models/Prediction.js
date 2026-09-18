@@ -63,6 +63,12 @@ async function listLeagues() {
 async function createPrediction(data, userId, userName) {
   const preds = await readPredictions();
   const ts = nowIso();
+  // match_date/match_time are optional on the create form (a leg imported
+  // from a tips screenshot rarely has them yet) but every public page
+  // (VIP, Free Bets, daily tickets...) filters/sorts predictions by date —
+  // a prediction stored with no date is invisible everywhere, not just
+  // "undated", so it defaults to today/now here rather than staying null.
+  const nowLocal = new Date();
   const pred = {
     id: crypto.randomUUID(),
     country: data.country || '',
@@ -70,8 +76,8 @@ async function createPrediction(data, userId, userName) {
     flag: data.flag || '',
     home_team: data.home_team,
     away_team: data.away_team,
-    match_date: data.match_date,
-    match_time: data.match_time,
+    match_date: data.match_date || nowLocal.toISOString().slice(0, 10),
+    match_time: data.match_time || nowLocal.toTimeString().slice(0, 5),
     status: data.status || 'upcoming',
     score_home: data.score_home ?? null,
     score_away: data.score_away ?? null,
