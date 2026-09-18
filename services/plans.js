@@ -47,4 +47,16 @@ async function setPlanPrice(type, { usd, htg, days } = {}) {
   return next;
 }
 
-module.exports = { HTG_PER_USD, DEFAULT_PLANS, getPlans, priceForPlan, setPlanPrice };
+// Only removes a custom plan from what's saved — a plan that ships as a
+// DEFAULT_PLANS entry (currently just "vip") can't actually be deleted
+// this way since getPlans() merges the defaults back in; callers should
+// reject that case explicitly (see DELETE /payments/plans/:type).
+async function deletePlan(type) {
+  const saved = (await readSetting(SETTINGS_KEY)) || {};
+  if (!(type in saved)) return getPlans();
+  const { [type]: _removed, ...rest } = saved;
+  await writeSetting(SETTINGS_KEY, rest);
+  return getPlans();
+}
+
+module.exports = { HTG_PER_USD, DEFAULT_PLANS, getPlans, priceForPlan, setPlanPrice, deletePlan };
