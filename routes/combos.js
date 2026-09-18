@@ -7,10 +7,11 @@ const { notifyPublish } = require('../services/notifyPublish');
 
 const router = express.Router();
 
-// Odd is intentionally not required — a leg imported from a tips
-// screenshot (see ComboForm's OCR import) often doesn't have it yet, and
-// a moderator can fill it in later by editing the leg.
-const LEG_REQUIRED_FIELDS = ['home_team', 'away_team', 'match_date', 'match_time', 'market', 'pick'];
+// Odd, date and time are intentionally not required — a leg imported
+// from a tips screenshot (see ComboForm's OCR import) often doesn't have
+// any of these yet, and a moderator can fill them in later by editing
+// the leg.
+const LEG_REQUIRED_FIELDS = ['home_team', 'away_team', 'market', 'pick'];
 
 function canEdit(user, pred) {
   if (user.role === 'admin') return true;

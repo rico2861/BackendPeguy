@@ -27,10 +27,13 @@ async function listPredictions({ date, dateFrom, league, country, market, q, tic
         p.league.toLowerCase().includes(needle)
     );
   }
+  // match_date/match_time can be null on a leg published without them yet
+  // (see ComboForm's OCR import) — sorted last rather than crashing on
+  // .localeCompare against null.
   return [...preds].sort((a, b) =>
     a.match_date === b.match_date
-      ? a.match_time.localeCompare(b.match_time)
-      : a.match_date.localeCompare(b.match_date)
+      ? (a.match_time || '').localeCompare(b.match_time || '')
+      : (a.match_date || '￿').localeCompare(b.match_date || '￿')
   );
 }
 
