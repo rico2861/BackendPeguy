@@ -19,7 +19,19 @@ async function checkAndSendReminders() {
     const plan = user.plan;
     if (!plan?.expiresAt) continue;
     const daysLeft = daysUntil(plan.expiresAt);
-    if (daysLeft < 0 || daysLeft > 7) continue; // already expired, or too far out
+    if (daysLeft < 0) {
+      // Already expired: a one-time "ton accès a expiré" notice, distinct
+      // from the heads-up reminders below which only ever fire beforehand.
+      if (!plan.expiredNotified) {
+        await mailer
+          .sendVipExpiredEmail(user)
+          .catch((err) => console.error('[mailer] VIP expired email failed:', err.message));
+        await User.markExpiredNotified(user.id, plan.startedAt);
+        sent += 1;
+      }
+      continue;
+    }
+    if (daysLeft > 7) continue; // too far out
 
     const threshold = THRESHOLDS.find((t) => t === daysLeft);
     if (threshold === undefined) continue;

@@ -358,6 +358,74 @@ Voir mes pronostics VIP : ${url}
   });
 }
 
+// Sent when an admin manually grants/extends a plan from the admin panel
+// (routes/users.js PATCH /:id/plan) — the only activation path that didn't
+// already email the member (paid activations use
+// sendPaymentConfirmationEmail, see routes/payments.js/paymentService.js).
+function sendVipGrantedEmail(user, plan) {
+  const name = escapeHtml(user.name);
+  const planLabel = plan.type === 'trial' ? 'Essai' : 'VIP';
+  const expiresLabel = new Date(plan.expiresAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/pronostics-vip`;
+  return sendMail({
+    to: user.email,
+    subject: 'Ton accès VIP PeguyTbn est activé',
+    html: renderEmail({
+      preheader: 'Ton accès VIP PeguyTbn vient d\'être activé.',
+      category: 'payment',
+      kicker: 'ABONNEMENT',
+      heading: 'Ton accès VIP est activé',
+      bodyHtml: `<p style="margin:0;">Bonjour ${name}, ton accès <strong>${planLabel}</strong> vient d'être activé. Cotes en direct, value bets et pronostics VIP de nos meilleurs pronostiqueurs sont disponibles dès maintenant.</p>`,
+      stats: [
+        { label: 'Plan', value: planLabel },
+        { label: 'Actif depuis', value: new Date(plan.startedAt).toLocaleDateString('fr-FR') },
+        { label: "Expire le", value: expiresLabel },
+      ],
+      ctaText: 'Voir mes pronostics VIP',
+      ctaUrl: url,
+    }),
+    text: `Bonjour ${user.name},
+
+Ton accès ${planLabel} PeguyTbn vient d'être activé.
+
+Actif depuis : ${new Date(plan.startedAt).toLocaleDateString('fr-FR')}
+Expire le : ${expiresLabel}
+
+Voir mes pronostics VIP : ${url}
+
+— L'équipe PeguyTbn`,
+  });
+}
+
+// Sent once, the first time subscriptionReminders.js notices a plan's
+// expiresAt has already passed — distinct from sendVipExpiringEmail, which
+// only ever fires BEFORE expiry (7/3/1/0 days out).
+function sendVipExpiredEmail(user) {
+  const name = escapeHtml(user.name);
+  const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/premium`;
+  return sendMail({
+    to: user.email,
+    subject: 'Ton accès VIP PeguyTbn a expiré',
+    html: renderEmail({
+      preheader: 'Ton accès VIP PeguyTbn a expiré — renouvelle pour continuer.',
+      category: 'payment',
+      kicker: 'ABONNEMENT',
+      heading: 'Ton accès VIP a expiré',
+      bodyHtml: `<p style="margin:0 0 12px;">Bonjour ${name},</p>
+        <p style="margin:0 0 12px;">Ton accès VIP PeguyTbn a expiré. Renouvelle dès maintenant pour retrouver les pronostics VIP, les value bets et les cotes en direct.</p>`,
+      ctaText: 'Renouveler mon accès VIP',
+      ctaUrl: url,
+    }),
+    text: `Bonjour ${user.name},
+
+Ton accès VIP PeguyTbn a expiré. Renouvelle dès maintenant pour retrouver les pronostics VIP, les value bets et les cotes en direct.
+
+Renouveler mon accès VIP : ${url}
+
+— L'équipe PeguyTbn`,
+  });
+}
+
 function sendVipExpiringEmail(user, daysRemaining) {
   const name = escapeHtml(user.name);
   const isToday = daysRemaining <= 0;
@@ -484,7 +552,9 @@ module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendPaymentConfirmationEmail,
+  sendVipGrantedEmail,
   sendVipExpiringEmail,
+  sendVipExpiredEmail,
   sendNewPicksEmail,
   sendOtpEmail,
 };

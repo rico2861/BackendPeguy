@@ -87,6 +87,9 @@ router.patch('/:id/plan', async (req, res) => {
     previousValue: before?.plan,
     newValue: updated.plan,
   });
+  // Paid activations already email the member (see paymentService.js) —
+  // this was the one activation path that granted VIP silently.
+  mailer.sendVipGrantedEmail(updated, updated.plan).catch((err) => console.error('[mailer] VIP grant email failed:', err.message));
   res.json({ user: updated });
 });
 

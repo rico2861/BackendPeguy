@@ -157,6 +157,17 @@ async function markReminderSent(id, planStartedAt, threshold) {
   await writeUsers(users);
 }
 
+// Marks the "your VIP has expired" e-mail as sent for the user's CURRENT
+// plan, so subscriptionReminders.js only ever sends it once (mirrors
+// markReminderSent above). No-op if the plan has since changed.
+async function markExpiredNotified(id, planStartedAt) {
+  const users = await readUsers();
+  const idx = users.findIndex((u) => u.id === id);
+  if (idx === -1 || users[idx].plan?.startedAt !== planStartedAt) return;
+  users[idx].plan.expiredNotified = true;
+  await writeUsers(users);
+}
+
 // `reason`/`cancelledByName` are admin-only — recorded on the planHistory
 // entry (mutated in place: it's the SAME object reference pushed into
 // planHistory by setPlan, so this update lands there too) so an admin can
@@ -389,6 +400,7 @@ module.exports = {
   setBlocked,
   setPlan,
   markReminderSent,
+  markExpiredNotified,
   clearPlan,
   remove,
   toggleFavorite,
