@@ -397,6 +397,39 @@ Voir mes pronostics VIP : ${url}
   });
 }
 
+// Sent by scripts/notifyFailedVipPayments.js for a payment stuck at
+// status 'failed' — distinct from sendPaymentConfirmationEmail, which is
+// only ever sent on success.
+function sendPaymentFailedEmail(user, payment) {
+  const name = escapeHtml(user.name);
+  const url = `${process.env.PUBLIC_APP_URL || 'http://localhost:5173'}/premium`;
+  const amountLabel =
+    payment.provider === 'moncash' || payment.provider === 'bazik'
+      ? `${payment.amountHtg} HTG`
+      : `${payment.amountUsd} $`;
+  return sendMail({
+    to: user.email,
+    subject: 'Ton paiement VIP PeguyTbn a échoué — réessaie pour profiter du weekend',
+    html: renderEmail({
+      preheader: "Ton paiement VIP n'est pas passé — réessaie pour profiter des coupons VIP de ce weekend.",
+      category: 'payment',
+      kicker: 'PAIEMENT',
+      heading: 'Ton paiement VIP a échoué',
+      bodyHtml: `<p style="margin:0 0 12px;">Bonjour ${name},</p>
+        <p style="margin:0 0 12px;">Ta dernière tentative de paiement (${amountLabel}) pour l'accès VIP n'a pas abouti. Réessaie dès maintenant pour ne pas manquer les coupons VIP de ce weekend — cotes en direct, value bets et pronostics de nos meilleurs pronostiqueurs.</p>`,
+      ctaText: 'Réessayer mon paiement',
+      ctaUrl: url,
+    }),
+    text: `Bonjour ${user.name},
+
+Ta dernière tentative de paiement (${amountLabel}) pour l'accès VIP n'a pas abouti. Réessaie dès maintenant pour ne pas manquer les coupons VIP de ce weekend.
+
+Réessayer mon paiement : ${url}
+
+— L'équipe PeguyTbn`,
+  });
+}
+
 // Sent once, the first time subscriptionReminders.js notices a plan's
 // expiresAt has already passed — distinct from sendVipExpiringEmail, which
 // only ever fires BEFORE expiry (7/3/1/0 days out).
@@ -552,6 +585,7 @@ module.exports = {
   sendWelcomeEmail,
   sendPasswordResetEmail,
   sendPaymentConfirmationEmail,
+  sendPaymentFailedEmail,
   sendVipGrantedEmail,
   sendVipExpiringEmail,
   sendVipExpiredEmail,
